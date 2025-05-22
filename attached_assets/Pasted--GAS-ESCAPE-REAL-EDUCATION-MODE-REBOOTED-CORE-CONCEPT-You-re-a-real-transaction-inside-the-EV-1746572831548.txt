@@ -1,0 +1,86 @@
+🧬 GAS ESCAPE: REAL EDUCATION MODE
+🔥 REBOOTED CORE CONCEPT:
+You’re a real transaction inside the EVM network.
+Your goal? Escape the mempool with the lowest gas and fastest confirmation —
+WITHOUT getting frontrun, sandwiched, dropped, or overpaying like a rookie.
+
+🧠 WHAT THIS GAME ACTUALLY TEACHES:
+Concept	Game Mechanic
+Mempool theory	You’re placed in a live mempool simulation with competing txs
+Priority fee math	You set your maxFeePerGas and maxPriorityFee
+Base fee predictions	Gas increases/decreases each block depending on simulated network activity
+Tx simulation logic	Preview if your tx will land or get bumped — with realtime feedback
+Block construction	Validator simulation includes greed, fairness, and MEV exposure
+Slippage + overpayment	If you set max fee way too high, the validator eats it — you lose points
+Latency + propagation	Transaction broadcast delay affects success rate
+Wallet optimization	Advanced players can configure batching, cancel-replace tx, etc.
+
+🎮 GAME STRUCTURE
+📦 LEVEL 1: Mempool Basics
+10 txs per mempool cycle
+
+Choose your fee
+
+Learn rejection vs inclusion rules
+
+🔓 LEVEL 2: Surge Mode
+NFT mint hits the chain
+
+Gas surges
+
+Can you predict the baseFee increase?
+
+🔐 LEVEL 3: Priority Wars
+Compete against 5 AI bots with different fee strategies
+
+Learn which gets in the block and why
+
+🧠 LEVEL 4: Frontrun Simulation (MEV)
+You broadcast a tx
+
+MEV bots try to sandwich it
+
+Learn how to avoid getting bled
+
+🧮 WHAT WE TRACK:
+Metric	Purpose
+Base Fee per block	Simulated EIP-1559 burn rate
+Inclusion cost	Final gas paid vs estimate
+Latency penalty	If your tx lags → risk of failure
+Overpayment	Bonus to validator = penalty to you
+Survival Score	% of txs successfully mined vs attempted
+
+👨‍🏫 BUILT-IN EDUCATION MODES
+Gas Oracle Terminal: Learn how oracles predict next block’s base fee
+
+TX Fee Estimator: Shows breakdown of what each field does
+
+Flash Attack Logs: Replay the moment you got frontrun — what went wrong, how to stop it
+
+Real Wallet Mode: Simulate txs using your actual wallet balances (but no real sending)
+
+💣 HARDCORE MODE: CHAIN SURGE CHAOS
+Gas hits 900+ gwei
+
+Bots submit multiple TXs per block
+
+You must:
+
+Set base + priority fee manually
+
+Predict validator greed
+
+Escape while other users fail
+
+💻 BONUS FOR LAUNCH:
+Code is modular so every mechanic can be broken into:
+
+React page (for visuals)
+
+Terminal mode (CLI input / educational readout)
+
+Wallet connect (optional)
+
+Every level has a downloadable "gas strategy report" — real tx data, formulas, and learnings for every playthrough
+
+🚀 NEXT MOVE

@@ -1,64 +1,67 @@
-import { useEffect, useRef, useState } from "react";
+import * as React from "react";
+import { cn } from "@/lib/utils";
 
-interface TerminalProps {
-  title?: string;
-  output: string;
-  className?: string;
-  isRunning?: boolean;
-  showControls?: boolean;
-}
+const Terminal = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      "flex h-full w-full flex-col overflow-hidden rounded-md border border-gray-800 bg-black text-white shadow",
+      className
+    )}
+    {...props}
+  />
+));
+Terminal.displayName = "Terminal";
 
-export function Terminal({ 
-  title = "PIXELVAULT TERMINAL", 
-  output, 
-  className = "", 
-  isRunning = false,
-  showControls = true 
-}: TerminalProps) {
-  const [cursorVisible, setCursorVisible] = useState(true);
-  const terminalRef = useRef<HTMLDivElement>(null);
-  
-  // Auto-scroll to bottom when output changes
-  useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
-    }
-  }, [output]);
-  
-  // Cursor blink effect
-  useEffect(() => {
-    if (!isRunning) return;
-    
-    const interval = setInterval(() => {
-      setCursorVisible(prev => !prev);
-    }, 500);
-    
-    return () => clearInterval(interval);
-  }, [isRunning]);
-  
-  return (
-    <div className={`terminal ${className}`}>
-      {showControls && (
-        <div className="terminal-header">
-          <div className="terminal-title neon">
-            {title}
-          </div>
-          <div className="terminal-controls">
-            <span className="terminal-red"></span>
-            <span className="terminal-yellow"></span>
-            <span className="terminal-green"></span>
-          </div>
-        </div>
-      )}
-      
-      <div className="terminal-content" ref={terminalRef}>
-        <pre className="whitespace-pre-wrap text-sm leading-relaxed">
-          {output}
-          {isRunning && (
-            <span className="terminal-cursor" style={{ opacity: cursorVisible ? 1 : 0 }}>_</span>
-          )}
-        </pre>
-      </div>
-    </div>
-  );
-}
+const TerminalHeader = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("flex items-center border-b border-gray-800 px-4 py-2", className)}
+    {...props}
+  />
+));
+TerminalHeader.displayName = "TerminalHeader";
+
+const TerminalBody = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("flex-1 overflow-auto p-4 font-mono", className)}
+    {...props}
+  />
+));
+TerminalBody.displayName = "TerminalBody";
+
+const TerminalOutput = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("mb-1", className)}
+    {...props}
+  />
+));
+TerminalOutput.displayName = "TerminalOutput";
+
+const TerminalInput = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("flex items-center", className)}
+    {...props}
+  />
+));
+TerminalInput.displayName = "TerminalInput";
+
+export { Terminal, TerminalHeader, TerminalBody, TerminalOutput, TerminalInput };
