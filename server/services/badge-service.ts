@@ -15,11 +15,12 @@ interface Badge {
   id: string;
   name: string;
   description: string;
-  imageUrl: string;
-  tier: 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHICAL';
-  category: 'ACHIEVEMENT' | 'PARTICIPATION' | 'SKILL' | 'LOYALTY' | 'SPECIAL';
-  requirements?: string[];
-  dateAdded: number;
+  imageUrl?: string; // Made optional
+  type: string; // Changed from category, general string
+  rarity: string; // Changed from tier, general string
+  requirement?: string; // Changed from requirements string[], now optional string
+  dateAdded?: number; // Made optional
+  secret?: boolean; // Added optional secret field
 }
 
 // UserBadge interface
@@ -42,8 +43,8 @@ const availableBadges: Badge[] = [
     name: 'Genesis Supporter',
     description: 'One of the first to join the PVX blockchain ecosystem',
     imageUrl: '/assets/badges/genesis_supporter.png',
-    tier: 'RARE',
-    category: 'PARTICIPATION',
+    rarity: 'RARE', // Was tier
+    type: 'PARTICIPATION', // Was category
     dateAdded: 1641034800000 // Jan 1, 2022
   },
   {
@@ -51,8 +52,8 @@ const availableBadges: Badge[] = [
     name: 'Blockchain Scholar',
     description: 'Completed the Blockchain Fundamentals learning module',
     imageUrl: '/assets/badges/blockchain_scholar.png',
-    tier: 'COMMON',
-    category: 'SKILL',
+    rarity: 'COMMON', // Was tier
+    type: 'SKILL', // Was category
     dateAdded: 1641034800000
   },
   {
@@ -60,8 +61,8 @@ const availableBadges: Badge[] = [
     name: 'Security Sentinel',
     description: 'Completed the Cryptographic Security learning module',
     imageUrl: '/assets/badges/security_sentinel.png',
-    tier: 'UNCOMMON',
-    category: 'SKILL',
+    rarity: 'UNCOMMON', // Was tier
+    type: 'SKILL', // Was category
     dateAdded: 1641034800000
   },
   {
@@ -69,8 +70,8 @@ const availableBadges: Badge[] = [
     name: 'DeFi Explorer',
     description: 'Completed the DeFi Fundamentals learning module',
     imageUrl: '/assets/badges/defi_explorer.png',
-    tier: 'RARE',
-    category: 'SKILL',
+    rarity: 'RARE', // Was tier
+    type: 'SKILL', // Was category
     dateAdded: 1641034800000
   },
   {
@@ -78,8 +79,8 @@ const availableBadges: Badge[] = [
     name: 'First Transaction',
     description: 'Sent your first PVX transaction',
     imageUrl: '/assets/badges/first_transaction.png',
-    tier: 'COMMON',
-    category: 'ACHIEVEMENT',
+    rarity: 'COMMON', // Was tier
+    type: 'ACHIEVEMENT', // Was category
     dateAdded: 1641034800000
   },
   {
@@ -87,9 +88,9 @@ const availableBadges: Badge[] = [
     name: 'Master Miner',
     description: 'Mined at least 100 blocks on the PVX network',
     imageUrl: '/assets/badges/master_miner.png',
-    tier: 'EPIC',
-    category: 'ACHIEVEMENT',
-    requirements: ['Mine 100 blocks'],
+    rarity: 'EPIC', // Was tier
+    type: 'ACHIEVEMENT', // Was category
+    requirement: 'Mine 100 blocks', // Was requirements (array)
     dateAdded: 1641034800000
   },
   {
@@ -97,9 +98,9 @@ const availableBadges: Badge[] = [
     name: 'Staking Pioneer',
     description: 'Staked PVX for at least 30 days continuously',
     imageUrl: '/assets/badges/staking_pioneer.png',
-    tier: 'UNCOMMON',
-    category: 'LOYALTY',
-    requirements: ['Stake for 30 consecutive days'],
+    rarity: 'UNCOMMON', // Was tier
+    type: 'LOYALTY', // Was category
+    requirement: 'Stake for 30 consecutive days', // Was requirements (array)
     dateAdded: 1641034800000
   },
   {
@@ -107,9 +108,9 @@ const availableBadges: Badge[] = [
     name: 'Governance Voter',
     description: 'Participated in at least 5 governance proposals',
     imageUrl: '/assets/badges/governance_voter.png',
-    tier: 'RARE',
-    category: 'PARTICIPATION',
-    requirements: ['Vote on 5 governance proposals'],
+    rarity: 'RARE', // Was tier
+    type: 'PARTICIPATION', // Was category
+    requirement: 'Vote on 5 governance proposals', // Was requirements (array)
     dateAdded: 1641034800000
   },
   {
@@ -117,8 +118,8 @@ const availableBadges: Badge[] = [
     name: 'Thringlet Keeper',
     description: 'Successfully bonded with a Thringlet for over 7 days',
     imageUrl: '/assets/badges/thringlet_keeper.png',
-    tier: 'LEGENDARY',
-    category: 'SPECIAL',
+    rarity: 'LEGENDARY', // Was tier
+    type: 'SPECIAL', // Was category
     dateAdded: 1641034800000
   }
 ];

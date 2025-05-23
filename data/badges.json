@@ -3,25 +3,31 @@
     "id": "tx-first",
     "name": "First Transaction",
     "description": "Completed your first PVX transaction",
-    "type": "transaction",
-    "rarity": "common",
-    "requirement": "Complete 1 transaction"
+    "category": "ACHIEVEMENT",
+    "tier": "COMMON",
+    "requirements": ["Complete 1 transaction"],
+    "imageUrl": "/assets/badges/tx-first.png",
+    "dateAdded": 1672531200000
   },
   {
     "id": "tx-10",
     "name": "Transaction Adept",
     "description": "Completed 10 PVX transactions",
-    "type": "transaction",
-    "rarity": "uncommon",
-    "requirement": "Complete 10 transactions"
+    "category": "ACHIEVEMENT",
+    "tier": "UNCOMMON",
+    "requirements": ["Complete 10 transactions"],
+    "imageUrl": "/assets/badges/tx-10.png",
+    "dateAdded": 1672531200000
   },
   {
     "id": "tx-100",
     "name": "Transaction Master",
     "description": "Completed 100 PVX transactions",
-    "type": "transaction",
-    "rarity": "rare",
-    "requirement": "Complete 100 transactions"
+    "category": "ACHIEVEMENT",
+    "tier": "RARE",
+    "requirements": ["Complete 100 transactions"],
+    "imageUrl": "/assets/badges/tx-100.png",
+    "dateAdded": 1672531200000
   },
   {
     "id": "mining-first-block",
