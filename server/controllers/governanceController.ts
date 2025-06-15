@@ -155,16 +155,16 @@ const governanceProposals: Proposal[] = [
  * Get all governance proposals
  */
 export const getAllProposals = async (req: Request, res: Response): Promise<void> => {
+  console.log(`[GovController] getAllProposals: Request received ${req.method} ${req.originalUrl}`);
   try {
-    // Don't send full voter data to client for privacy
     const sanitizedProposals = governanceProposals.map(({ voters, ...rest }) => ({
       ...rest,
       voterCount: voters.length
     }));
-    
+    console.log(`[GovController] getAllProposals: Returning ${sanitizedProposals.length} proposals (sanitized).`);
     res.status(200).json(sanitizedProposals);
   } catch (error) {
-    console.error('Error getting governance proposals:', error);
+    console.error('[GovController] getAllProposals: Error getting governance proposals:', error.message);
     res.status(500).json({ error: 'Failed to fetch governance proposals' });
   }
 };
@@ -173,16 +173,17 @@ export const getAllProposals = async (req: Request, res: Response): Promise<void
  * Get a specific proposal by ID
  */
 export const getProposalById = async (req: Request, res: Response): Promise<void> => {
+  const { proposalId } = req.params;
+  console.log(`[GovController] getProposalById: Request received ${req.method} ${req.originalUrl} for ProposalID: ${proposalId}`);
   try {
-    const { proposalId } = req.params;
     const proposal = governanceProposals.find(p => p.id === proposalId);
     
     if (!proposal) {
+      console.warn(`[GovController] getProposalById: Proposal with ID ${proposalId} not found.`);
       res.status(404).json({ error: 'Proposal not found' });
       return;
     }
-    
-    // Don't send voter addresses to client for privacy
+    console.log(`[GovController] getProposalById: Proposal ${proposalId} found: "${proposal.title}". Sanitizing voter data.`);
     const sanitizedProposal = {
       ...proposal,
       voters: proposal.voters.map(({ address, ...rest }) => ({
@@ -192,9 +193,10 @@ export const getProposalById = async (req: Request, res: Response): Promise<void
       }))
     };
     
+    console.log(`[GovController] getProposalById: Sending 200 OK response for proposal ${proposalId}.`);
     res.status(200).json(sanitizedProposal);
   } catch (error) {
-    console.error('Error getting proposal by ID:', error);
+    console.error(`[GovController] getProposalById: Error getting proposal by ID ${proposalId}:`, error.message);
     res.status(500).json({ error: 'Failed to fetch proposal' });
   }
 };
@@ -203,32 +205,37 @@ export const getProposalById = async (req: Request, res: Response): Promise<void
  * Create a new governance proposal
  */
 export const createProposal = async (req: Request, res: Response): Promise<void> => {
+  console.log(`[GovController] createProposal: Request received ${req.method} ${req.originalUrl}`);
   try {
     const { title, description, category, proposerAddress, endTimeInDays, minimumVotingPower, parameterChanges } = req.body;
-    
-    // Validate required fields
+    console.log(`[GovController] createProposal: Body - title="${title}", category=${category}, proposer=${proposerAddress}, endTimeDays=${endTimeInDays}`);
+
     if (!title || !description || !category || !proposerAddress || !endTimeInDays) {
+      console.warn(`[GovController] createProposal: Missing required fields. Title: ${title}, Category: ${category}, Proposer: ${proposerAddress}, EndTimeDays: ${endTimeInDays}`);
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
     
-    // Check if wallet exists
+    console.log(`[GovController] createProposal: Verifying proposer wallet ${proposerAddress}.`);
     const wallet = await memBlockchainStorage.getWalletByAddress(proposerAddress);
     if (!wallet) {
+      console.warn(`[GovController] createProposal: Proposer wallet ${proposerAddress} not found.`);
       res.status(404).json({ error: 'Proposer wallet not found' });
       return;
     }
     
-    // Check if proposer has enough voting power (staked tokens)
+    console.log(`[GovController] createProposal: Checking voting power for ${proposerAddress}.`);
     const activeStakes = await memBlockchainStorage.getActiveStakesByAddress(proposerAddress);
     const totalStaked = activeStakes.reduce((sum, stake) => sum + parseFloat(stake.amount), 0);
+    const minVotingPowerRequired = 10000; // Example value
     
-    if (totalStaked < 10000) { // Minimum 10,000 μPVX to create a proposal
-      res.status(400).json({ error: 'Insufficient voting power to create a proposal. Minimum 10,000 μPVX staked required.' });
+    if (totalStaked < minVotingPowerRequired) {
+      console.warn(`[GovController] createProposal: Insufficient voting power for ${proposerAddress}. Staked: ${totalStaked}, Required: ${minVotingPowerRequired}`);
+      res.status(400).json({ error: `Insufficient voting power to create a proposal. Minimum ${minVotingPowerRequired} μPVX staked required.` });
       return;
     }
+    console.log(`[GovController] createProposal: Voting power sufficient for ${proposerAddress}.`);
     
-    // Generate a unique ID for the proposal
     const proposalId = `gov_${crypto.randomBytes(4).toString('hex')}`;
     const now = Date.now();
     
@@ -252,8 +259,8 @@ export const createProposal = async (req: Request, res: Response): Promise<void>
     
     // Add the proposal to the list
     governanceProposals.push(newProposal);
+    console.log(`[GovController] createProposal: New proposal ${proposalId} ("${title}") added to in-memory list.`);
     
-    // Create a transaction for the proposal creation
     const txHash = crypto.createHash('sha256')
       .update(`proposal_create_${proposalId}_${proposerAddress}_${now}`)
       .digest('hex');
@@ -275,26 +282,22 @@ export const createProposal = async (req: Request, res: Response): Promise<void>
       }
     };
     
-    // Add transaction to the blockchain
-    await memBlockchainStorage.createTransaction(transaction);
+    await memBlockchainStorage.createTransaction(transaction); // Assumes logs
+    console.log(`[GovController] createProposal: GOVERNANCE_PROPOSAL transaction ${txHash} created in memory for proposal ${proposalId}.`);
     
-    // Broadcast transaction via WebSocket
     try {
       broadcastTransaction(transaction);
+      console.log(`[GovController] createProposal: Broadcasted GOVERNANCE_PROPOSAL transaction ${txHash}.`);
     } catch (err) {
-      console.error('Error broadcasting proposal creation transaction:', err);
-      // Continue even if broadcast fails
+      console.error('[GovController] createProposal: Error broadcasting proposal creation transaction:', err.message);
     }
     
-    res.status(201).json({
-      success: true,
-      message: 'Governance proposal created successfully',
-      proposal: newProposal,
-      transactionHash: txHash
-    });
+    const responsePayload = { success: true, message: 'Governance proposal created successfully', proposal: newProposal, transactionHash: txHash };
+    console.log(`[GovController] createProposal: Sending 201 Created response for proposal ${proposalId}.`, { id: newProposal.id, title: newProposal.title });
+    res.status(201).json(responsePayload);
     
   } catch (error) {
-    console.error('Error creating governance proposal:', error);
+    console.error(`[GovController] createProposal: Error creating proposal - Title: "${req.body.title}", Proposer: ${req.body.proposerAddress}:`, error.message);
     res.status(500).json({ error: 'Failed to create governance proposal' });
   }
 };
@@ -303,62 +306,62 @@ export const createProposal = async (req: Request, res: Response): Promise<void>
  * Vote on a governance proposal
  */
 export const voteOnProposal = async (req: Request, res: Response): Promise<void> => {
+  const { proposalId } = req.params;
+  const { voterAddress, voteType } = req.body;
+  console.log(`[GovController] voteOnProposal: Request received ${req.method} ${req.originalUrl} for ProposalID: ${proposalId}. Body - Voter: ${voterAddress}, VoteType: ${voteType}`);
   try {
-    const { proposalId } = req.params;
-    const { voterAddress, voteType } = req.body;
-    
-    // Validate required fields
     if (!proposalId || !voterAddress || !voteType) {
+      console.warn(`[GovController] voteOnProposal: Missing required fields. ProposalID: ${proposalId}, Voter: ${voterAddress}, VoteType: ${voteType}`);
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
     
-    // Check if proposal exists
+    console.log(`[GovController] voteOnProposal: Finding proposal ${proposalId}.`);
     const proposal = governanceProposals.find(p => p.id === proposalId);
     if (!proposal) {
+      console.warn(`[GovController] voteOnProposal: Proposal ${proposalId} not found.`);
       res.status(404).json({ error: 'Proposal not found' });
       return;
     }
     
-    // Check if proposal is still active
     if (proposal.status !== ProposalStatus.ACTIVE) {
+      console.warn(`[GovController] voteOnProposal: Proposal ${proposalId} is not active. Status: ${proposal.status}`);
       res.status(400).json({ error: 'This proposal is no longer active' });
       return;
     }
     
-    // Check if voting period is still open
     if (proposal.endTime < Date.now()) {
+      console.warn(`[GovController] voteOnProposal: Voting period for proposal ${proposalId} has ended. EndTime: ${new Date(proposal.endTime).toISOString()}`);
       res.status(400).json({ error: 'Voting period for this proposal has ended' });
       return;
     }
     
-    // Check if wallet exists
+    console.log(`[GovController] voteOnProposal: Verifying voter wallet ${voterAddress}.`);
     const wallet = await memBlockchainStorage.getWalletByAddress(voterAddress);
     if (!wallet) {
+      console.warn(`[GovController] voteOnProposal: Voter wallet ${voterAddress} not found.`);
       res.status(404).json({ error: 'Voter wallet not found' });
       return;
     }
     
-    // Check if user has already voted
     const existingVote = proposal.voters.find(v => v.address === voterAddress);
     if (existingVote) {
+      console.warn(`[GovController] voteOnProposal: Voter ${voterAddress} has already voted on proposal ${proposalId}.`);
       res.status(400).json({ error: 'You have already voted on this proposal' });
       return;
     }
     
-    // Calculate voting power (based on staked tokens)
+    console.log(`[GovController] voteOnProposal: Calculating voting power for ${voterAddress}.`);
     const activeStakes = await memBlockchainStorage.getActiveStakesByAddress(voterAddress);
     const votingPower = activeStakes.reduce((sum, stake) => sum + parseFloat(stake.amount), 0);
     
-    // Check if voter has minimum required voting power
     if (votingPower < proposal.minimumVotingPower) {
-      res.status(400).json({ 
-        error: `Insufficient voting power. Minimum ${proposal.minimumVotingPower} μPVX staked required.` 
-      });
+      console.warn(`[GovController] voteOnProposal: Insufficient voting power for ${voterAddress} on proposal ${proposalId}. Power: ${votingPower}, Required: ${proposal.minimumVotingPower}`);
+      res.status(400).json({ error: `Insufficient voting power. Minimum ${proposal.minimumVotingPower} μPVX staked required.` });
       return;
     }
+    console.log(`[GovController] voteOnProposal: Voter ${voterAddress} has sufficient voting power (${votingPower}). Recording vote.`);
     
-    // Add the vote
     const now = Date.now();
     proposal.voters.push({
       address: voterAddress,
@@ -368,22 +371,17 @@ export const voteOnProposal = async (req: Request, res: Response): Promise<void>
     });
     
     // Update vote counts
-    switch (voteType) {
-      case VoteType.FOR:
-        proposal.votesFor += votingPower;
-        break;
-      case VoteType.AGAINST:
-        proposal.votesAgainst += votingPower;
-        break;
-      case VoteType.ABSTAIN:
-        proposal.votesAbstain += votingPower;
-        break;
+    switch (voteType as VoteType) { // Cast to ensure type safety
+      case VoteType.FOR: proposal.votesFor += votingPower; break;
+      case VoteType.AGAINST: proposal.votesAgainst += votingPower; break;
+      case VoteType.ABSTAIN: proposal.votesAbstain += votingPower; break;
       default:
+        console.warn(`[GovController] voteOnProposal: Invalid vote type "${voteType}" for proposal ${proposalId} by ${voterAddress}.`);
         res.status(400).json({ error: 'Invalid vote type' });
         return;
     }
+    console.log(`[GovController] voteOnProposal: Vote counts for proposal ${proposalId} updated: For=${proposal.votesFor}, Against=${proposal.votesAgainst}, Abstain=${proposal.votesAbstain}`);
     
-    // Create a transaction for the vote
     const txHash = crypto.createHash('sha256')
       .update(`proposal_vote_${proposalId}_${voterAddress}_${now}`)
       .digest('hex');
@@ -406,26 +404,22 @@ export const voteOnProposal = async (req: Request, res: Response): Promise<void>
       }
     };
     
-    // Add transaction to the blockchain
-    await memBlockchainStorage.createTransaction(transaction);
+    await memBlockchainStorage.createTransaction(transaction); // Assumes logs
+    console.log(`[GovController] voteOnProposal: GOVERNANCE_VOTE transaction ${txHash} created in memory for proposal ${proposalId}.`);
     
-    // Broadcast transaction via WebSocket
     try {
       broadcastTransaction(transaction);
+      console.log(`[GovController] voteOnProposal: Broadcasted GOVERNANCE_VOTE transaction ${txHash}.`);
     } catch (err) {
-      console.error('Error broadcasting vote transaction:', err);
-      // Continue even if broadcast fails
+      console.error('[GovController] voteOnProposal: Error broadcasting vote transaction:', err.message);
     }
     
-    res.status(200).json({
-      success: true,
-      message: `Vote cast successfully: ${voteType}`,
-      votingPower,
-      transactionHash: txHash
-    });
+    const responsePayload = { success: true, message: `Vote cast successfully: ${voteType}`, votingPower, transactionHash: txHash };
+    console.log(`[GovController] voteOnProposal: Sending 200 OK response for vote on proposal ${proposalId} by ${voterAddress}.`, responsePayload);
+    res.status(200).json(responsePayload);
     
   } catch (error) {
-    console.error('Error voting on proposal:', error);
+    console.error(`[GovController] voteOnProposal: Error processing vote for ProposalID: ${req.params.proposalId}, Voter: ${req.body.voterAddress}:`, error.message);
     res.status(500).json({ error: 'Failed to cast vote' });
   }
 };
@@ -434,50 +428,51 @@ export const voteOnProposal = async (req: Request, res: Response): Promise<void>
  * Execute a passed proposal
  */
 export const executeProposal = async (req: Request, res: Response): Promise<void> => {
+  const { proposalId } = req.params;
+  const { executorAddress } = req.body;
+  console.log(`[GovController] executeProposal: Request received ${req.method} ${req.originalUrl} for ProposalID: ${proposalId}. Executor: ${executorAddress}`);
   try {
-    const { proposalId } = req.params;
-    const { executorAddress } = req.body;
-    
-    // Validate required fields
     if (!proposalId || !executorAddress) {
+      console.warn(`[GovController] executeProposal: Missing required fields. ProposalID: ${proposalId}, Executor: ${executorAddress}`);
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
     
-    // Check if proposal exists
+    console.log(`[GovController] executeProposal: Finding proposal ${proposalId}.`);
     const proposal = governanceProposals.find(p => p.id === proposalId);
     if (!proposal) {
+      console.warn(`[GovController] executeProposal: Proposal ${proposalId} not found.`);
       res.status(404).json({ error: 'Proposal not found' });
       return;
     }
     
-    // Check if proposal is still active
     if (proposal.status !== ProposalStatus.ACTIVE) {
-      res.status(400).json({ error: 'This proposal has already been processed' });
+      console.warn(`[GovController] executeProposal: Proposal ${proposalId} is not active for execution. Status: ${proposal.status}`);
+      res.status(400).json({ error: 'This proposal has already been processed or is not active' });
       return;
     }
     
-    // Check if voting period has ended
     if (proposal.endTime > Date.now()) {
+      console.warn(`[GovController] executeProposal: Voting period for proposal ${proposalId} has not ended. EndTime: ${new Date(proposal.endTime).toISOString()}`);
       res.status(400).json({ error: 'Voting period for this proposal has not ended yet' });
       return;
     }
     
-    // Check if wallet exists
+    console.log(`[GovController] executeProposal: Verifying executor wallet ${executorAddress}.`);
     const wallet = await memBlockchainStorage.getWalletByAddress(executorAddress);
     if (!wallet) {
+      console.warn(`[GovController] executeProposal: Executor wallet ${executorAddress} not found.`);
       res.status(404).json({ error: 'Executor wallet not found' });
       return;
     }
     
-    // Determine if proposal passed
+    console.log(`[GovController] executeProposal: Determining outcome for proposal ${proposalId}. Votes For: ${proposal.votesFor}, Votes Against: ${proposal.votesAgainst}`);
     const totalVotes = proposal.votesFor + proposal.votesAgainst;
     const isPassed = totalVotes > 0 && proposal.votesFor > proposal.votesAgainst;
     
-    // Update proposal status
     proposal.status = isPassed ? ProposalStatus.PASSED : ProposalStatus.REJECTED;
+    console.log(`[GovController] executeProposal: Proposal ${proposalId} outcome: ${proposal.status}.`);
     
-    // Create a transaction for the execution
     const now = Date.now();
     const txHash = crypto.createHash('sha256')
       .update(`proposal_execute_${proposalId}_${executorAddress}_${now}`)
@@ -500,35 +495,34 @@ export const executeProposal = async (req: Request, res: Response): Promise<void
       }
     };
     
-    // Add transaction to the blockchain
-    await memBlockchainStorage.createTransaction(transaction);
+    await memBlockchainStorage.createTransaction(transaction); // Assumes logs
+    console.log(`[GovController] executeProposal: GOVERNANCE transaction ${txHash} for proposal execution created in memory.`);
     
-    // Save transaction hash in proposal
     proposal.executionTransactionHash = txHash;
     
-    // Implement proposal changes if passed
     if (isPassed) {
-      await implementProposalChanges(proposal);
-      proposal.status = ProposalStatus.EXECUTED;
+      console.log(`[GovController] executeProposal: Proposal ${proposalId} passed. Implementing changes...`);
+      await implementProposalChanges(proposal); // Logs internally
+      proposal.status = ProposalStatus.EXECUTED; // Update status after implementation
+      console.log(`[GovController] executeProposal: Proposal ${proposalId} status updated to EXECUTED.`);
     }
     
-    // Broadcast transaction via WebSocket
     try {
       broadcastTransaction(transaction);
+      console.log(`[GovController] executeProposal: Broadcasted GOVERNANCE transaction ${txHash} for proposal execution.`);
     } catch (err) {
-      console.error('Error broadcasting proposal execution transaction:', err);
-      // Continue even if broadcast fails
+      console.error('[GovController] executeProposal: Error broadcasting proposal execution transaction:', err.message);
     }
     
-    res.status(200).json({
-      success: true,
-      message: `Proposal ${isPassed ? 'passed' : 'rejected'} and ${isPassed ? 'executed' : 'recorded'} successfully`,
-      result: isPassed ? 'passed' : 'rejected',
-      transactionHash: txHash
-    });
+    const responsePayload = {
+      success: true, message: `Proposal ${isPassed ? 'passed' : 'rejected'} and ${isPassed ? 'executed' : 'recorded'} successfully`,
+      result: isPassed ? 'passed' : 'rejected', transactionHash: txHash
+    };
+    console.log(`[GovController] executeProposal: Sending 200 OK for proposal ${proposalId}.`, responsePayload);
+    res.status(200).json(responsePayload);
     
   } catch (error) {
-    console.error('Error executing proposal:', error);
+    console.error(`[GovController] executeProposal: Error executing proposal ${req.params.proposalId}:`, error.message);
     res.status(500).json({ error: 'Failed to execute proposal' });
   }
 };
@@ -537,61 +531,57 @@ export const executeProposal = async (req: Request, res: Response): Promise<void
  * Implement changes from a passed proposal
  */
 async function implementProposalChanges(proposal: Proposal): Promise<void> {
-  // This would contain the logic to implement the changes from the proposal
-  // For now, we'll just log the implementation
-  console.log(`Implementing proposal ${proposal.id}: ${proposal.title}`);
+  console.log(`[GovControllerInternal] implementProposalChanges for proposal ID: ${proposal.id}, Title: "${proposal.title}"`);
   
   switch (proposal.category) {
     case 'PARAMETER':
       if (proposal.parameterChanges) {
         for (const change of proposal.parameterChanges) {
-          console.log(`Changing parameter ${change.paramName} from ${change.currentValue} to ${change.proposedValue}`);
-          // Here we would actually update the parameter in the system
+          console.log(`[GovControllerInternal] PARAM_CHANGE: Param: ${change.paramName}, Old: ${change.currentValue}, New: ${change.proposedValue}`);
+          // Actual implementation logic would go here
         }
+      } else {
+        console.log(`[GovControllerInternal] PARAM_CHANGE: No parameter changes specified for proposal ${proposal.id}.`);
       }
       break;
     case 'TREASURY':
-      console.log(`Executing treasury action from proposal: ${proposal.title}`);
-      // Here we would implement treasury-related changes
+      console.log(`[GovControllerInternal] TREASURY_ACTION: For proposal "${proposal.title}". Details: ${proposal.description}`);
+      // Actual treasury action logic
       break;
     case 'PROTOCOL':
-      console.log(`Executing protocol change from proposal: ${proposal.title}`);
-      // Here we would implement protocol-level changes
+      console.log(`[GovControllerInternal] PROTOCOL_CHANGE: For proposal "${proposal.title}". Details: ${proposal.description}`);
+      // Actual protocol change logic
       break;
     case 'SOCIAL':
-      console.log(`Executing social directive from proposal: ${proposal.title}`);
-      // Social directives might not need on-chain implementation
+      console.log(`[GovControllerInternal] SOCIAL_DIRECTIVE: For proposal "${proposal.title}". No on-chain action typically needed.`);
       break;
+    default:
+      console.warn(`[GovControllerInternal] Unknown proposal category for ${proposal.id}: ${proposal.category}`);
   }
+  console.log(`[GovControllerInternal] Finished 'implementing' changes for proposal ${proposal.id}.`);
 }
 
 /**
  * Get governance stats
  */
 export const getGovernanceStats = async (req: Request, res: Response): Promise<void> => {
+  console.log(`[GovController] getGovernanceStats: Request received ${req.method} ${req.originalUrl}`);
   try {
     const activeProposals = governanceProposals.filter(p => p.status === ProposalStatus.ACTIVE).length;
     const passedProposals = governanceProposals.filter(p => p.status === ProposalStatus.PASSED || p.status === ProposalStatus.EXECUTED).length;
     const rejectedProposals = governanceProposals.filter(p => p.status === ProposalStatus.REJECTED).length;
     
-    const totalVotes = governanceProposals.reduce((sum, proposal) => {
-      return sum + proposal.voters.length;
-    }, 0);
+    const totalVotes = governanceProposals.reduce((sum, proposal) => sum + proposal.voters.length, 0);
+    const totalVotingPower = governanceProposals.reduce((sum, proposal) => sum + proposal.votesFor + proposal.votesAgainst + proposal.votesAbstain, 0);
     
-    const totalVotingPower = governanceProposals.reduce((sum, proposal) => {
-      return sum + proposal.votesFor + proposal.votesAgainst + proposal.votesAbstain;
-    }, 0);
-    
-    res.status(200).json({
-      activeProposals,
-      passedProposals,
-      rejectedProposals,
-      totalProposals: governanceProposals.length,
-      totalVotes,
-      totalVotingPower
-    });
+    const stats = {
+      activeProposals, passedProposals, rejectedProposals,
+      totalProposals: governanceProposals.length, totalVotes, totalVotingPower
+    };
+    console.log(`[GovController] getGovernanceStats: Calculated stats - `, stats);
+    res.status(200).json(stats);
   } catch (error) {
-    console.error('Error getting governance stats:', error);
+    console.error('[GovController] getGovernanceStats: Error getting governance stats:', error.message);
     res.status(500).json({ error: 'Failed to fetch governance stats' });
   }
 };
@@ -600,21 +590,22 @@ export const getGovernanceStats = async (req: Request, res: Response): Promise<v
  * Get user voting power
  */
 export const getUserVotingPower = async (req: Request, res: Response): Promise<void> => {
+  const { walletAddress } = req.params;
+  console.log(`[GovController] getUserVotingPower: Request received ${req.method} ${req.originalUrl} for WalletAddress: ${walletAddress}`);
   try {
-    const { walletAddress } = req.params;
-    
-    // Check if wallet exists
+    console.log(`[GovController] getUserVotingPower: Verifying wallet ${walletAddress}.`);
     const wallet = await memBlockchainStorage.getWalletByAddress(walletAddress);
     if (!wallet) {
+      console.warn(`[GovController] getUserVotingPower: Wallet ${walletAddress} not found.`);
       res.status(404).json({ error: 'Wallet not found' });
       return;
     }
     
-    // Calculate voting power (based on staked tokens)
+    console.log(`[GovController] getUserVotingPower: Calculating voting power for ${walletAddress}.`);
     const activeStakes = await memBlockchainStorage.getActiveStakesByAddress(walletAddress);
     const votingPower = activeStakes.reduce((sum, stake) => sum + parseFloat(stake.amount), 0);
+    console.log(`[GovController] getUserVotingPower: Voting power for ${walletAddress} is ${votingPower}.`);
     
-    // Get user's voting history
     const votingHistory = governanceProposals.reduce((history, proposal) => {
       const vote = proposal.voters.find(v => v.address === walletAddress);
       if (vote) {

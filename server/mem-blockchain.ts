@@ -46,56 +46,18 @@ export class MemBlockchainStorage {
   
   constructor() {
     this.loadFromFile();
-    // Initialize default staking pools if none exist
-    if (this.stakingPools.length === 0) {
-      this.initializeDefaultStakingPools();
-    }
+    // Default pools are no longer initialized here.
+    // They should be loaded from the database via loadStakingPools() on startup.
   }
   
-  // Initialize default staking pools
-  private initializeDefaultStakingPools() {
-    this.stakingPools = [
-      {
-        id: 'pool1',
-        name: 'Genesis Pool',
-        description: 'The original PVX staking pool with no lockup period',
-        apy: '8.5',
-        totalStaked: '1500000000',
-        minStake: '10000',
-        lockupPeriod: 0, // No lockup
-        active: true
-      },
-      {
-        id: 'pool2',
-        name: 'Hodler Pool',
-        description: 'Higher APY with a short 7-day lockup period',
-        apy: '12.0',
-        totalStaked: '750000000',
-        minStake: '100000',
-        lockupPeriod: 7, // 7 days
-        active: true
-      },
-      {
-        id: 'pool3',
-        name: 'Validator Pool',
-        description: 'Premium returns for long-term stakers with 30-day lockup',
-        apy: '15.0',
-        totalStaked: '350000000',
-        minStake: '1000000',
-        lockupPeriod: 30, // 30 days
-        active: true
-      },
-      {
-        id: 'pool4',
-        name: 'ZK Privacy Pool',
-        description: 'Highest returns with enhanced privacy features',
-        apy: '18.5',
-        totalStaked: '200000000',
-        minStake: '5000000',
-        lockupPeriod: 90, // 90 days
-        active: true
-      }
-    ];
+  // Method to load staking pools from an external source (e.g., database)
+  public async loadStakingPools(pools: StakingPool[]) {
+    this.stakingPools = pools;
+    console.log(`[MemBlockchainStorage] Loaded ${pools.length} staking pools.`);
+    // Optionally, save to file after loading from DB to keep the JSON store in sync
+    // However, if the DB is the source of truth, saving here might not be necessary
+    // unless the file is used as a cache or fallback. For now, let's save.
+    await this.saveToFile();
   }
   
   // Save data to file

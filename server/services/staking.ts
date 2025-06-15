@@ -13,17 +13,22 @@ export class StakingService {
    * Create a new stake
    */
   async createStake(address: string, amount: number, duration: number): Promise<Stake> {
+    console.log(`[StakingService] createStake called for address: ${address}, amount: ${amount}, duration: ${duration} days.`);
     // Check if wallet has sufficient balance
     const balance = await this.storage.getWalletBalance(address);
+    console.log(`[StakingService] Wallet ${address} balance: ${balance}. Staking amount: ${amount}.`);
     if (balance < amount) {
+      console.error(`[StakingService] Insufficient balance for ${address} to stake ${amount}. Balance: ${balance}`);
       throw new Error("Insufficient balance for staking");
     }
     
     // Validate duration (must be at least 30 days)
     if (duration < 30) {
+      console.error(`[StakingService] Invalid staking duration for ${address}: ${duration} days. Minimum is 30.`);
       throw new Error("Minimum staking duration is 30 days");
     }
     
+    console.log(`[StakingService] Balance and duration validated for ${address}.`);
     // Calculate voting power based on amount and duration
     const votingPower = calculateVotingPower(amount, duration);
     
@@ -42,38 +47,47 @@ export class StakingService {
     };
     
     // Create a transaction for the stake
-    await this.storage.createTransaction({
+    const stakeTx = {
       type: TransactionType.STAKE,
       fromAddress: address,
-      toAddress: "zk_PVX:staking_pool",
+      toAddress: "zk_PVX:staking_pool", // Consider making this a constant
       amount,
       timestamp: new Date(),
-      note: `Staked for ${duration} days`
-    });
+      note: `Staked ${amount} for ${duration} days`
+    };
+    console.log(`[StakingService] Creating STAKE transaction for ${address}:`, { type: stakeTx.type, amount: stakeTx.amount, note: stakeTx.note });
+    await this.storage.createTransaction(stakeTx);
     
     // Update wallet balance
-    await this.storage.updateWalletBalance(address, balance - amount);
+    const newBalance = balance - amount;
+    console.log(`[StakingService] Updating wallet ${address} balance from ${balance} to ${newBalance}.`);
+    await this.storage.updateWalletBalance(address, newBalance);
     
-    return this.storage.createStake(stake);
+    const createdStake = await this.storage.createStake(stake);
+    console.log(`[StakingService] Stake created successfully for ${address} with ID: ${createdStake.id}, Voting Power: ${votingPower}`);
+    return createdStake;
   }
 
   /**
    * Get active stakes for an address
    */
   async getStakes(address: string): Promise<Stake[]> {
-    return this.storage.getStakes(address);
+    console.log(`[StakingService] getStakes called for address: ${address}`);
+    const stakes = await this.storage.getStakes(address);
+    console.log(`[StakingService] Found ${stakes.length} stakes for address ${address}.`);
+    return stakes;
   }
 
   /**
    * Get staking stats for an address
    */
   async getStakingStats(address: string): Promise<StakingStats> {
-    const stakes = await this.storage.getStakes(address);
+    console.log(`[StakingService] getStakingStats called for address: ${address}`);
+    const stakes = await this.storage.getStakes(address); // getStakes already logs
     
     let totalStaked = 0;
     let totalVotingPower = 0;
     
-    // Calculate totals from active stakes
     for (const stake of stakes) {
       if (stake.isActive) {
         totalStaked += stake.amount;
@@ -81,51 +95,45 @@ export class StakingService {
       }
     }
     
-    // Mock estimated yield based on current network conditions
-    // In a real implementation, this would be calculated based on 
-    // total staked tokens, reward rate, etc.
-    const estimatedYield = "8.2";
-    
-    return {
-      totalStaked,
-      votingPower: totalVotingPower,
-      estimatedYield
-    };
+    const estimatedYield = "8.2"; // Placeholder, as noted in original code
+    const stats: StakingStats = { totalStaked, votingPower: totalVotingPower, estimatedYield };
+    console.log(`[StakingService] Calculated staking stats for ${address}:`, stats);
+    return stats;
   }
 
   /**
    * Unstake tokens
    */
   async unstake(stakeId: string): Promise<boolean> {
-    return this.storage.unstake(stakeId);
+    console.log(`[StakingService] unstake called for stakeId: ${stakeId}`);
+    // Assuming storage.unstake handles logging of success/failure or throws error
+    const result = await this.storage.unstake(stakeId);
+    console.log(`[StakingService] Unstake operation for stakeId ${stakeId} result: ${result}`);
+    return result;
   }
 
   /**
    * Get active governance proposals
    */
   async getProposals(): Promise<Proposal[]> {
+    console.log(`[StakingService] getProposals called.`);
     try {
-      return this.storage.getProposals();
+      const proposals = await this.storage.getProposals();
+      console.log(`[StakingService] Found ${proposals.length} proposals from storage.`);
+      return proposals;
     } catch (error) {
-      console.error("Error getting proposals:", error);
-      // Return default fallback values
-      return [
-        {
-          id: "1",
-          title: "PVX Improvement Proposal #1",
-          description: "Allocate 5% of treasury to security audits",
-          creatorAddress: "0x58a42d5c19c6066dda35e274f7f08aaca541c1b0",
-          createTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
-          endTime: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
-          status: 'active',
-          yesVotes: "6750000",
-          noVotes: "2340000",
-          abstainVotes: "890000",
-          quorum: "8000000",
-          voteCount: 126,
-          ttl: 21
-        }
-      ];
+      console.error("[StakingService] Error getting proposals:", error.message);
+      // Fallback logic as in original code
+      const fallbackProposals = [{
+        id: "1", title: "PVX Improvement Proposal #1", description: "Allocate 5% of treasury to security audits",
+        creatorAddress: "0x58a42d5c19c6066dda35e274f7f08aaca541c1b0",
+        createTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        endTime: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        status: 'active' as 'active', yesVotes: "6750000", noVotes: "2340000", abstainVotes: "890000",
+        quorum: "8000000", voteCount: 126, ttl: 21
+      }];
+      console.warn(`[StakingService] Returning default fallback proposals due to error.`);
+      return fallbackProposals;
     }
   }
 
@@ -133,32 +141,38 @@ export class StakingService {
    * Get user votes
    */
   async getVotes(address: string): Promise<{proposalId: string, option: VoteOption}[]> {
-    return this.storage.getVotes(address);
+    console.log(`[StakingService] getVotes called for address: ${address}`);
+    const votes = await this.storage.getVotes(address);
+    console.log(`[StakingService] Found ${votes.length} votes for address ${address}.`);
+    return votes;
   }
 
   /**
    * Vote on a governance proposal
    */
   async vote(address: string, proposalId: string, option: VoteOption): Promise<boolean> {
-    // Verify the proposal exists
+    console.log(`[StakingService] vote called by address: ${address} for proposalId: ${proposalId}, option: ${option}`);
     const proposal = await this.storage.getProposal(proposalId);
     if (!proposal) {
+      console.error(`[StakingService] Vote failed: Proposal ${proposalId} not found.`);
       throw new Error("Proposal not found");
     }
     
-    // Check if proposal is still active
     if (proposal.status !== "active" || new Date() > proposal.endTime) {
+      console.error(`[StakingService] Vote failed: Proposal ${proposalId} is not active or has ended. Status: ${proposal.status}, EndTime: ${proposal.endTime}`);
       throw new Error("Proposal is no longer active");
     }
     
-    // Verify that the user has voting power
-    const stats = await this.getStakingStats(address);
+    const stats = await this.getStakingStats(address); // getStakingStats already logs
     if (stats.votingPower <= 0) {
+      console.error(`[StakingService] Vote failed: Address ${address} has insufficient voting power (${stats.votingPower}).`);
       throw new Error("You need staked tokens to vote");
     }
     
-    // Record the vote
-    return this.storage.vote(address, proposalId, option);
+    console.log(`[StakingService] All validations passed for vote by ${address} on proposal ${proposalId}. Recording vote...`);
+    const voteResult = await this.storage.vote(address, proposalId, option);
+    console.log(`[StakingService] Vote by ${address} on proposal ${proposalId} recorded with result: ${voteResult}`);
+    return voteResult;
   }
 
   /**

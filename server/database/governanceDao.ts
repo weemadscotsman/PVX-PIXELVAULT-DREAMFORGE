@@ -13,8 +13,8 @@ export class GovernanceDao {
    * @returns Created governance proposal
    */
   async createProposal(proposal: GovernanceProposal): Promise<GovernanceProposal> {
+    console.log(`[GovernanceDAO] createProposal called for proposal ID: ${proposal.id}, Title: ${proposal.title}`);
     try {
-      // Convert proposal to database format
       const dbProposal = {
         id: proposal.id,
         title: proposal.title,
@@ -32,14 +32,12 @@ export class GovernanceDao {
         executionTransactionHash: proposal.executionTransactionHash
       };
 
-      // Insert proposal
       await db.insert(governanceProposals).values(dbProposal);
-      
-      // Return original proposal
+      console.log(`[GovernanceDAO] Proposal ${proposal.id} - "${proposal.title}" created successfully.`);
       return proposal;
     } catch (error) {
-      console.error('Error creating governance proposal:', error);
-      throw new Error('Failed to create governance proposal');
+      console.error(`[GovernanceDAO] Error creating proposal ${proposal.id}:`, error.message);
+      throw new Error(`Failed to create proposal ${proposal.id}: ${error.message}`);
     }
   }
 
@@ -49,17 +47,17 @@ export class GovernanceDao {
    * @returns Governance proposal or undefined if not found
    */
   async getProposalById(id: string): Promise<GovernanceProposal | undefined> {
+    console.log(`[GovernanceDAO] getProposalById called for ID: ${id}`);
     try {
-      const result = await db.select()
-        .from(governanceProposals)
-        .where(eq(governanceProposals.id, id))
-        .limit(1);
+      const result = await db.select().from(governanceProposals).where(eq(governanceProposals.id, id)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[GovernanceDAO] Proposal with ID ${id} not found.`);
         return undefined;
       }
       
-      // Convert database format to GovernanceProposal
+      console.log(`[GovernanceDAO] Proposal with ID ${id} found: ${result[0].title}`);
+      const dbProposal = result[0];
       const dbProposal = result[0];
       return {
         id: dbProposal.id,
@@ -78,8 +76,8 @@ export class GovernanceDao {
         executionTransactionHash: dbProposal.executionTransactionHash ?? undefined
       };
     } catch (error) {
-      console.error('Error getting governance proposal by ID:', error);
-      throw new Error('Failed to get governance proposal');
+      console.error(`[GovernanceDAO] Error getting proposal by ID ${id}:`, error.message);
+      throw new Error(`Failed to get proposal for ID ${id}: ${error.message}`);
     }
   }
 
@@ -89,13 +87,10 @@ export class GovernanceDao {
    * @returns Array of governance proposals
    */
   async getAllProposals(limit: number = 100): Promise<GovernanceProposal[]> {
+    console.log(`[GovernanceDAO] getAllProposals called with limit: ${limit}`);
     try {
-      const result = await db.select()
-        .from(governanceProposals)
-        .orderBy(desc(governanceProposals.createdAt))
-        .limit(limit);
-      
-      // Convert database format to GovernanceProposal[]
+      const result = await db.select().from(governanceProposals).orderBy(desc(governanceProposals.createdAt)).limit(limit);
+      console.log(`[GovernanceDAO] Found ${result.length} proposals.`);
       return result.map(dbProposal => ({
         id: dbProposal.id,
         title: dbProposal.title,
@@ -113,8 +108,8 @@ export class GovernanceDao {
         executionTransactionHash: dbProposal.executionTransactionHash ?? undefined
       }));
     } catch (error) {
-      console.error('Error getting all governance proposals:', error);
-      throw new Error('Failed to get governance proposals');
+      console.error(`[GovernanceDAO] Error getting all proposals:`, error.message);
+      throw new Error(`Failed to get all proposals: ${error.message}`);
     }
   }
 
@@ -123,18 +118,12 @@ export class GovernanceDao {
    * @returns Array of active governance proposals
    */
   async getActiveProposals(): Promise<GovernanceProposal[]> {
+    console.log(`[GovernanceDAO] getActiveProposals called.`);
     try {
-      const result = await db.select()
-        .from(governanceProposals)
-        .where(
-          and(
-            eq(governanceProposals.status, 'active'),
-            gt(governanceProposals.endTime, BigInt(Date.now()))
-          )
-        )
+      const result = await db.select().from(governanceProposals)
+        .where(and(eq(governanceProposals.status, 'active'), gt(governanceProposals.endTime, BigInt(Date.now()))))
         .orderBy(desc(governanceProposals.createdAt));
-      
-      // Convert database format to GovernanceProposal[]
+      console.log(`[GovernanceDAO] Found ${result.length} active proposals.`);
       return result.map(dbProposal => ({
         id: dbProposal.id,
         title: dbProposal.title,
@@ -152,8 +141,8 @@ export class GovernanceDao {
         executionTransactionHash: dbProposal.executionTransactionHash ?? undefined
       }));
     } catch (error) {
-      console.error('Error getting active governance proposals:', error);
-      throw new Error('Failed to get active governance proposals');
+      console.error(`[GovernanceDAO] Error getting active proposals:`, error.message);
+      throw new Error(`Failed to get active proposals: ${error.message}`);
     }
   }
 
@@ -163,14 +152,15 @@ export class GovernanceDao {
    * @returns Updated governance proposal
    */
   async updateProposal(proposal: GovernanceProposal): Promise<GovernanceProposal> {
+    console.log(`[GovernanceDAO] updateProposal called for proposal ID: ${proposal.id}`);
     try {
-      // Check if proposal exists
-      const existingProposal = await this.getProposalById(proposal.id);
+      const existingProposal = await this.getProposalById(proposal.id); // Already logs
       if (!existingProposal) {
-        return this.createProposal(proposal);
+        console.log(`[GovernanceDAO] Proposal ${proposal.id} not found for update, attempting to create instead.`);
+        return this.createProposal(proposal); // Already logs
       }
       
-      // Convert proposal to database format
+      console.log(`[GovernanceDAO] Updating proposal ${proposal.id} in DB.`);
       const dbProposal = {
         title: proposal.title,
         description: proposal.description,
@@ -186,16 +176,12 @@ export class GovernanceDao {
         updatedAt: new Date()
       };
 
-      // Update proposal
-      await db.update(governanceProposals)
-        .set(dbProposal)
-        .where(eq(governanceProposals.id, proposal.id));
-      
-      // Return updated proposal
+      await db.update(governanceProposals).set(dbProposal).where(eq(governanceProposals.id, proposal.id));
+      console.log(`[GovernanceDAO] Proposal ${proposal.id} updated successfully.`);
       return proposal;
     } catch (error) {
-      console.error('Error updating governance proposal:', error);
-      throw new Error('Failed to update governance proposal');
+      console.error(`[GovernanceDAO] Error updating proposal ${proposal.id}:`, error.message);
+      throw new Error(`Failed to update proposal ${proposal.id}: ${error.message}`);
     }
   }
 

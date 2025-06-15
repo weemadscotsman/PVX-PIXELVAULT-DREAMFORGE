@@ -9,7 +9,7 @@ import { memBlockchainStorage } from '../mem-blockchain';
  * Create all tables in the database if they don't exist
  */
 async function createTablesIfNotExist(client: postgres.Sql<{}>) {
-  console.log('Creating tables if they don\'t exist...');
+  console.log('[DB Init] Starting createTablesIfNotExist...');
 
   // Create blocks table
   await client`
@@ -281,16 +281,15 @@ async function createTablesIfNotExist(client: postgres.Sql<{}>) {
   
   await client`CREATE INDEX IF NOT EXISTS IDX_session_expire ON sessions (expire)`;
 
-  console.log('All tables created successfully');
+  console.log('[DB Init] Finished createTablesIfNotExist. All tables checked/created.');
 }
 
 /**
  * Initialize the database with required data
  */
 export async function initializeDatabase() {
+  console.log('[DB Init] Starting initializeDatabase...');
   try {
-    console.log('Initializing database...');
-    
     if (!process.env.DATABASE_URL) {
       throw new Error('DATABASE_URL environment variable not set');
     }
@@ -305,14 +304,12 @@ export async function initializeDatabase() {
     const db = drizzle(client, { schema });
     
     // Check if staking pools are already initialized
+    console.log('[DB Init] Checking/initializing default staking pools...');
     try {
       const existingPools = await db.select().from(schema.stakingPools);
       
       if (existingPools.length === 0) {
-      console.log('Initializing default staking pools...');
-      
-      // Add default staking pools
-      await db.insert(schema.stakingPools).values([
+      const poolsToInsert = [
         {
           id: createId(),
           name: 'Secure Vault',
@@ -353,23 +350,82 @@ export async function initializeDatabase() {
           totalStaked: '0',
           activeStakers: 0
         }
-      ]);
-      
-      console.log('Default staking pools initialized successfully');
+      ];
+      console.log(`[DB Init] No existing staking pools found. Initializing ${poolsToInsert.length} default staking pools...`);
+      await db.insert(schema.stakingPools).values(poolsToInsert);
+      console.log(`[DB Init] ${poolsToInsert.length} default staking pools initialized successfully.`);
+      } else {
+        console.log(`[DB Init] Found ${existingPools.length} existing staking pools. Skipping initialization.`);
       }
     } catch (err) {
-      console.error('Error initializing staking pools:', err);
+      console.error('[DB Init] Error initializing staking pools:', err);
     }
     
     // Check if badges are already initialized
+    console.log('[DB Init] Checking/initializing badges...');
     try {
       const existingBadges = await db.select().from(schema.badges);
       
       if (existingBadges.length === 0) {
-      console.log('Initializing badges...');
+      const badgesToInsert = [
+        {
+          id: createId(),
+          name: 'Secure Vault',
+          description: 'Low risk, steady returns with a short lockup period.',
+          apr: 5,
+          minStakeAmount: 100,
+          lockupPeriod: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+          totalStaked: '0',
+          activeStakers: 0
+        },
+        {
+          id: createId(),
+          name: 'Balanced Node',
+          description: 'Balanced risk and reward with a moderate lockup period.',
+          apr: 12,
+          minStakeAmount: 500,
+          lockupPeriod: 2592000, // 30 days in seconds (instead of milliseconds to avoid integer overflow)
+          totalStaked: '0',
+          activeStakers: 0
+        },
+        {
+          id: createId(),
+          name: 'Quantum Yield',
+          description: 'Higher potential returns for a longer commitment.',
+          apr: 25,
+          minStakeAmount: 1000,
+          lockupPeriod: 7776000, // 90 days in seconds (instead of milliseconds to avoid integer overflow)
+          totalStaked: '0',
+          activeStakers: 0
+        },
+        {
+          id: createId(),
+          name: 'Genesis Core',
+          description: 'Maximum returns for early network supporters with the longest lockup.',
+          apr: 42,
+          minStakeAmount: 5000,
+          lockupPeriod: 15552000, // 180 days in seconds (instead of milliseconds to avoid integer overflow)
+          totalStaked: '0',
+          activeStakers: 0
+        }
+      ];
+      console.log(`[DB Init] No existing badges found. Initializing ${badgesToInsert.length} default badges...`);
+      await db.insert(schema.badges).values(badgesToInsert);
+      console.log(`[DB Init] ${badgesToInsert.length} default badges initialized successfully.`);
+      } else {
+        console.log(`[DB Init] Found ${existingBadges.length} existing badges. Skipping initialization.`);
+      }
+    } catch (err) {
+      console.error('[DB Init] Error initializing badges:', err);
+    }
+
+    // Check if learning modules are already initialized
+    console.log('[DB Init] Checking/initializing learning modules...');
+    try {
+      const existingModules = await db.select().from(schema.learningModules);
       
-      // Add default badges
-      await db.insert(schema.badges).values([
+      if (existingModules.length === 0) {
+      const learningModulesToInsert = [
         {
           id: createId(),
           name: 'Blockchain Pioneer',
@@ -420,39 +476,12 @@ export async function initializeDatabase() {
           requirements: { interactionsRequired: 50 },
           dateAdded: Date.now()
         }
-      ]);
+      ];
+      console.log(`[DB Init] No existing learning modules found. Initializing ${learningModulesToInsert.length} default learning module(s)...`);
+      const moduleId = learningModulesToInsert[0].id; // Assuming first module is the one with questions
+      await db.insert(schema.learningModules).values(learningModulesToInsert);
       
-      console.log('Badges initialized successfully');
-      }
-    } catch (err) {
-      console.error('Error initializing badges:', err);
-    }
-    
-    // Check if learning modules are already initialized
-    try {
-      const existingModules = await db.select().from(schema.learningModules);
-      
-      if (existingModules.length === 0) {
-      console.log('Initializing learning modules...');
-      
-      // Add default learning modules
-      const moduleId = createId();
-      await db.insert(schema.learningModules).values([
-        {
-          id: moduleId,
-          title: 'Blockchain Basics',
-          description: 'Learn the fundamental concepts of blockchain technology.',
-          difficulty: 'beginner',
-          type: 'quiz',
-          xpReward: 100,
-          tokenReward: 50,
-          badgeId: 'blockchain_basics',
-          completionCriteria: { questionsRequired: 3 }
-        }
-      ]);
-      
-      // Add questions for the module
-      await db.insert(schema.learningQuestions).values([
+      const questionsToInsert = [
         {
           id: createId(),
           moduleId: moduleId,
@@ -477,27 +506,38 @@ export async function initializeDatabase() {
           correctOption: 1,
           explanation: 'A private key is a secret, alphanumeric password that allows users to sign transactions and access their cryptocurrency. It should never be shared with others.'
         }
-      ]);
-      
-      console.log('Learning modules initialized successfully');
+      ];
+      console.log(`[DB Init] Initializing ${questionsToInsert.length} questions for module ID ${moduleId}...`);
+      await db.insert(schema.learningQuestions).values(questionsToInsert);
+      console.log(`[DB Init] ${learningModulesToInsert.length} learning module(s) and ${questionsToInsert.length} questions initialized successfully.`);
+      } else {
+        console.log(`[DB Init] Found ${existingModules.length} existing learning modules. Skipping initialization.`);
       }
     } catch (err) {
-      console.error('Error initializing learning modules:', err);
+      console.error('[DB Init] Error initializing learning modules:', err);
     }
     
     // Check if we need to migrate data from in-memory storage
+    console.log('[DB Init] Checking for in-memory data migration to database...');
     try {
-      const walletCount = await db.select().from(schema.wallets).limit(1);
+      const walletCountResult = await db.select({ count: sql<number>`count(*)` }).from(schema.wallets);
+      const walletCount = walletCountResult[0].count;
       
-      if (walletCount.length === 0 && memBlockchainStorage) {
-      console.log('Migrating existing in-memory data to database...');
+      if (walletCount === 0 && memBlockchainStorage) {
+      console.log('[DB Init] No wallets in DB, attempting to migrate data from in-memory storage...');
       
+      let migratedWalletsCount = 0;
+      let migratedMinerStatsCount = 0;
+      let migratedBlocksCount = 0;
+      let migratedTransactionsCount = 0;
+      let migratedStakeRecordsCount = 0;
+
       try {
         // Migrate wallets
         const wallets = Array.from(memBlockchainStorage.wallets.values());
         if (wallets.length > 0) {
+          console.log(`[DB Init] Migrating ${wallets.length} wallets from memory...`);
           for (const wallet of wallets) {
-            // Use drizzle's insert method instead of raw SQL to avoid parameter issues
             try {
               await db.insert(schema.wallets).values({
                 address: wallet.address,
@@ -507,28 +547,35 @@ export async function initializeDatabase() {
                 lastUpdated: wallet.lastUpdated || new Date(), // Use lastUpdated instead of lastSynced
                 passphraseSalt: wallet.passphraseSalt,
                 passphraseHash: wallet.passphraseHash
-              }).onConflictDoNothing();
+              }).onConflictDoNothing(); // Use onConflictDoNothing or update based on your logic
+              migratedWalletsCount++;
             } catch (error) {
-              console.error(`Error migrating wallet ${wallet.address}:`, error);
+              console.error(`[DB Init] Error migrating wallet ${wallet.address}:`, error);
             }
           }
-          console.log(`Migrated ${wallets.length} wallets`);
+          console.log(`[DB Init] Finished migrating ${migratedWalletsCount} wallets.`);
+        } else {
+          console.log('[DB Init] No wallets in memory to migrate.');
         }
         
         // Migrate mining stats
         const minerStats = await memBlockchainStorage.getAllActiveMiners();
         if (minerStats.length > 0) {
+          console.log(`[DB Init] Migrating ${minerStats.length} miner stats from memory...`);
           for (const stats of minerStats) {
             try {
-              // Convert formatted hash rate string to integer if needed
-              let hashRate = stats.currentHashRate;
-              if (typeof hashRate === 'string' && hashRate.includes('MH/s')) {
-                // Parse the string to get the numeric value
-                hashRate = parseInt(parseFloat(hashRate.replace('MH/s', '').trim()) * 1000000);
-              } else if (typeof hashRate === 'string' && hashRate.includes('H/s')) {
-                hashRate = parseInt(hashRate.replace('H/s', '').trim());
+              let hashRate = stats.currentHashRate; // Ensure hashRate is correctly parsed as number
+              if (typeof hashRate === 'string') {
+                if (hashRate.includes('MH/s')) {
+                  hashRate = parseInt(parseFloat(hashRate.replace('MH/s', '').trim()) * 1000000);
+                } else if (hashRate.includes('H/s')) {
+                  hashRate = parseInt(hashRate.replace('H/s', '').trim());
+                } else {
+                  hashRate = parseInt(hashRate) || 0;
+                }
+              } else if (typeof hashRate !== 'number') {
+                hashRate = 0;
               }
-              
               await db.insert(schema.minerStats).values({
                 address: stats.address,
                 blocksMined: stats.blocksMined,
@@ -537,18 +584,22 @@ export async function initializeDatabase() {
                 isCurrentlyMining: stats.isCurrentlyMining,
                 hardware: stats.hardware,
                 joinedAt: stats.joinedAt,
-                currentHashRate: typeof hashRate === 'number' ? hashRate : 0 // Ensure it's a number
-              });
+                currentHashRate: hashRate
+              }).onConflictDoNothing(); // Assuming address is primary key and you want to skip if exists
+              migratedMinerStatsCount++;
             } catch (error) {
-              console.error(`Error migrating miner stats for ${stats.address}:`, error);
+              console.error(`[DB Init] Error migrating miner stats for ${stats.address}:`, error);
             }
           }
-          console.log(`Migrated ${minerStats.length} miner stats`);
+          console.log(`[DB Init] Finished migrating ${migratedMinerStatsCount} miner stats.`);
+        } else {
+          console.log('[DB Init] No miner stats in memory to migrate.');
         }
         
         // Migrate blocks - last 100 for performance reasons
-        const blocks = await memBlockchainStorage.getRecentBlocks(100);
+        const blocks = await memBlockchainStorage.getRecentBlocks(100); // Configurable limit
         if (blocks.length > 0) {
+          console.log(`[DB Init] Migrating last ${blocks.length} blocks from memory...`);
           for (const block of blocks) {
             await db.insert(schema.blocks).values({
               height: block.height,
@@ -561,14 +612,18 @@ export async function initializeDatabase() {
               merkleRoot: block.merkleRoot,
               totalTransactions: block.totalTransactions,
               size: block.size
-            });
+            }).onConflictDoNothing(); // Assuming height is primary key and you want to skip if exists
+            migratedBlocksCount++;
           }
-          console.log(`Migrated ${blocks.length} blocks`);
+          console.log(`[DB Init] Finished migrating ${migratedBlocksCount} blocks.`);
+        } else {
+          console.log('[DB Init] No blocks in memory to migrate.');
         }
         
         // Migrate transactions - last 200 for performance reasons
-        const transactions = await memBlockchainStorage.getRecentTransactions(200);
+        const transactions = await memBlockchainStorage.getRecentTransactions(200); // Configurable limit
         if (transactions.length > 0) {
+          console.log(`[DB Init] Migrating last ${transactions.length} transactions from memory...`);
           for (const tx of transactions) {
             await db.insert(schema.transactions).values({
               hash: tx.hash,
@@ -583,18 +638,23 @@ export async function initializeDatabase() {
               blockHeight: tx.blockHeight,
               fee: tx.fee ? tx.fee : 0,
               metadata: tx.metadata
-            });
+            }).onConflictDoNothing(); // Assuming hash is primary key
+            migratedTransactionsCount++;
           }
-          console.log(`Migrated ${transactions.length} transactions`);
+          console.log(`[DB Init] Finished migrating ${migratedTransactionsCount} transactions.`);
+        } else {
+          console.log('[DB Init] No transactions in memory to migrate.');
         }
         
         // Migrate staking records
-        const stakePools = await memBlockchainStorage.getStakingPools();
-        for (const pool of stakePools) {
-          const stakeRecords = await memBlockchainStorage.getActiveStakesByPoolId(pool.id);
-          if (stakeRecords.length > 0) {
-            for (const stake of stakeRecords) {
-              await db.insert(schema.stakeRecords).values({
+        const stakePoolsFromMem = await memBlockchainStorage.getStakingPools(); // Renamed to avoid conflict
+        if (stakePoolsFromMem.length > 0) {
+          console.log(`[DB Init] Migrating staking records from memory for ${stakePoolsFromMem.length} pools...`);
+          for (const pool of stakePoolsFromMem) { // Use the renamed variable
+            const stakeRecords = await memBlockchainStorage.getActiveStakesByPoolId(pool.id);
+            if (stakeRecords.length > 0) {
+              for (const stake of stakeRecords) {
+                await db.insert(schema.stakeRecords).values({
                 id: stake.id,
                 walletAddress: stake.walletAddress,
                 poolId: stake.poolId,
@@ -604,28 +664,36 @@ export async function initializeDatabase() {
                 isActive: stake.isActive,
                 rewards: stake.rewards,
                 lastRewardClaim: stake.lastRewardClaim,
-                autoCompound: stake.autoCompound
-              });
+                  autoCompound: stake.autoCompound
+                }).onConflictDoNothing(); // Assuming id is primary key
+                migratedStakeRecordsCount++;
+              }
+              console.log(`[DB Init] Migrated ${migratedStakeRecordsCount} stake records for pool ${pool.id}.`);
+              migratedStakeRecordsCount = 0; // Reset for next pool
             }
-            console.log(`Migrated ${stakeRecords.length} stake records for pool ${pool.id}`);
           }
+        } else {
+          console.log('[DB Init] No staking pools in memory to migrate records from.');
         }
+        console.log('[DB Init] In-memory data migration process completed.');
       } catch (err) {
-        console.error('Error during migration:', err);
+        console.error('[DB Init] Error during in-memory data migration:', err);
       }
-    }
+      } else {
+        console.log(`[DB Init] Found ${walletCount} wallets in DB. Skipping in-memory data migration.`);
+      }
     } catch (err) {
-      console.error('Error during wallet check or migration:', err);
+      console.error('[DB Init] Error during wallet count check or migration decision:', err);
     }
     
     // Close connection
     await client.end();
+    console.log('[DB Init] Database connection closed after initialization.');
     
-    console.log('Database initialization completed');
-    
+    console.log('[DB Init] initializeDatabase completed successfully.');
     return true;
   } catch (error) {
-    console.error('Error initializing database:', error);
+    console.error('[DB Init] Critical error during initializeDatabase:', error);
     return false;
   }
 }
@@ -635,10 +703,12 @@ export default initializeDatabase;
 
 // Export the dbInit object that server/index.ts is expecting
 export const dbInit = {
-  initDatabaseWithMigration: initializeDatabase,
+  initDatabaseWithMigration: initializeDatabase, // This already includes seeding logic
   seedDefaultData: async () => {
-    // This function is called after initialization to seed any additional data
-    console.log('No additional seeding required - done during initialization');
+    // This function might be redundant if initDatabaseWithMigration handles all seeding.
+    // For clarity, it can be kept if there's a desire to separate initial schema/migration from pure data seeding.
+    // However, the current initializeDatabase seems to do both.
+    console.log('[DB Init] seedDefaultData called. Current implementation seeds data during initDatabaseWithMigration.');
     return true;
   }
 };

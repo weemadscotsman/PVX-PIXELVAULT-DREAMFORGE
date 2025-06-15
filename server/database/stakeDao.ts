@@ -13,8 +13,8 @@ export class StakeDao {
    * @returns Created stake record
    */
   async createStakeRecord(stake: StakeRecord): Promise<StakeRecord> {
+    console.log(`[StakeDAO] createStakeRecord called for stake ID: ${stake.id}, pool ID: ${stake.poolId}, wallet: ${stake.walletAddress}`);
     try {
-      // Convert stake record to database format
       const dbStake = {
         id: stake.id,
         walletAddress: stake.walletAddress,
@@ -30,15 +30,14 @@ export class StakeDao {
 
       // Insert stake record
       await db.insert(stakeRecords).values(dbStake);
+      console.log(`[StakeDAO] Stake record ${stake.id} inserted successfully.`);
       
-      // Update pool statistics
       await this.updatePoolStatistics(stake.poolId);
       
-      // Return original stake record
       return stake;
     } catch (error) {
-      console.error('Error creating stake record:', error);
-      throw new Error('Failed to create stake record');
+      console.error(`[StakeDAO] Error creating stake record ${stake.id}:`, error.message);
+      throw new Error(`Failed to create stake record ${stake.id}: ${error.message}`);
     }
   }
 
@@ -48,18 +47,18 @@ export class StakeDao {
    * @returns Stake record or undefined if not found
    */
   async getStakeById(id: string): Promise<StakeRecord | undefined> {
+    console.log(`[StakeDAO] getStakeById called for ID: ${id}`);
     try {
-      const result = await db.select()
-        .from(stakeRecords)
-        .where(eq(stakeRecords.id, id))
-        .limit(1);
+      const result = await db.select().from(stakeRecords).where(eq(stakeRecords.id, id)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[StakeDAO] Stake record with ID ${id} not found.`);
         return undefined;
       }
       
-      // Convert database format to StakeRecord
+      console.log(`[StakeDAO] Stake record with ID ${id} found.`);
       const dbStake = result[0];
+      // Removed duplicate const dbStake = result[0];
       return {
         id: dbStake.id,
         walletAddress: dbStake.walletAddress,
@@ -73,8 +72,8 @@ export class StakeDao {
         autoCompound: dbStake.autoCompound
       };
     } catch (error) {
-      console.error('Error getting stake by ID:', error);
-      throw new Error('Failed to get stake record');
+      console.error(`[StakeDAO] Error getting stake by ID ${id}:`, error.message);
+      throw new Error(`Failed to get stake record for ID ${id}: ${error.message}`);
     }
   }
 
@@ -84,13 +83,10 @@ export class StakeDao {
    * @returns Array of stake records
    */
   async getStakesByAddress(address: string): Promise<StakeRecord[]> {
+    console.log(`[StakeDAO] getStakesByAddress called for address: ${address}`);
     try {
-      const result = await db.select()
-        .from(stakeRecords)
-        .where(eq(stakeRecords.walletAddress, address))
-        .orderBy(desc(stakeRecords.startTime));
-      
-      // Convert database format to StakeRecord[]
+      const result = await db.select().from(stakeRecords).where(eq(stakeRecords.walletAddress, address)).orderBy(desc(stakeRecords.startTime));
+      console.log(`[StakeDAO] Found ${result.length} stake records for address ${address}.`);
       return result.map(dbStake => ({
         id: dbStake.id,
         walletAddress: dbStake.walletAddress,
@@ -104,8 +100,8 @@ export class StakeDao {
         autoCompound: dbStake.autoCompound
       }));
     } catch (error) {
-      console.error('Error getting stakes by address:', error);
-      throw new Error('Failed to get stake records');
+      console.error(`[StakeDAO] Error getting stakes by address ${address}:`, error.message);
+      throw new Error(`Failed to get stake records for address ${address}: ${error.message}`);
     }
   }
 
@@ -115,18 +111,15 @@ export class StakeDao {
    * @returns Array of active stake records
    */
   async getActiveStakesByAddress(address: string): Promise<StakeRecord[]> {
+    console.log(`[StakeDAO] getActiveStakesByAddress called for address: ${address}`);
     try {
-      const result = await db.select()
-        .from(stakeRecords)
-        .where(
-          and(
-            eq(stakeRecords.walletAddress, address),
-            eq(stakeRecords.isActive, true)
-          )
+      const result = await db.select().from(stakeRecords).where(
+        and(
+          eq(stakeRecords.walletAddress, address),
+          eq(stakeRecords.isActive, true)
         )
-        .orderBy(desc(stakeRecords.startTime));
-      
-      // Convert database format to StakeRecord[]
+      ).orderBy(desc(stakeRecords.startTime));
+      console.log(`[StakeDAO] Found ${result.length} active stake records for address ${address}.`);
       return result.map(dbStake => ({
         id: dbStake.id,
         walletAddress: dbStake.walletAddress,
@@ -140,8 +133,8 @@ export class StakeDao {
         autoCompound: dbStake.autoCompound
       }));
     } catch (error) {
-      console.error('Error getting active stakes by address:', error);
-      throw new Error('Failed to get active stake records');
+      console.error(`[StakeDAO] Error getting active stakes by address ${address}:`, error.message);
+      throw new Error(`Failed to get active stake records for address ${address}: ${error.message}`);
     }
   }
 
@@ -151,18 +144,15 @@ export class StakeDao {
    * @returns Array of active stake records
    */
   async getActiveStakesByPoolId(poolId: string): Promise<StakeRecord[]> {
+    console.log(`[StakeDAO] getActiveStakesByPoolId called for pool ID: ${poolId}`);
     try {
-      const result = await db.select()
-        .from(stakeRecords)
-        .where(
-          and(
-            eq(stakeRecords.poolId, poolId),
-            eq(stakeRecords.isActive, true)
-          )
+      const result = await db.select().from(stakeRecords).where(
+        and(
+          eq(stakeRecords.poolId, poolId),
+          eq(stakeRecords.isActive, true)
         )
-        .orderBy(desc(stakeRecords.startTime));
-      
-      // Convert database format to StakeRecord[]
+      ).orderBy(desc(stakeRecords.startTime));
+      console.log(`[StakeDAO] Found ${result.length} active stake records for pool ID ${poolId}.`);
       return result.map(dbStake => ({
         id: dbStake.id,
         walletAddress: dbStake.walletAddress,
@@ -176,8 +166,8 @@ export class StakeDao {
         autoCompound: dbStake.autoCompound
       }));
     } catch (error) {
-      console.error('Error getting active stakes by pool ID:', error);
-      throw new Error('Failed to get active stake records');
+      console.error(`[StakeDAO] Error getting active stakes by pool ID ${poolId}:`, error.message);
+      throw new Error(`Failed to get active stake records for pool ID ${poolId}: ${error.message}`);
     }
   }
 
@@ -187,14 +177,15 @@ export class StakeDao {
    * @returns Updated stake record
    */
   async updateStakeRecord(stake: StakeRecord): Promise<StakeRecord> {
+    console.log(`[StakeDAO] updateStakeRecord called for stake ID: ${stake.id}`);
     try {
-      // Check if stake exists
-      const existingStake = await this.getStakeById(stake.id);
+      const existingStake = await this.getStakeById(stake.id); // getStakeById already logs
       if (!existingStake) {
-        return this.createStakeRecord(stake);
+        console.log(`[StakeDAO] Stake record ${stake.id} not found for update, attempting to create instead.`);
+        return this.createStakeRecord(stake); // createStakeRecord already logs
       }
       
-      // Convert stake record to database format
+      console.log(`[StakeDAO] Updating stake record ${stake.id} in DB.`);
       const dbStake = {
         amount: stake.amount,
         endTime: stake.endTime ? BigInt(stake.endTime) : null,
@@ -205,21 +196,18 @@ export class StakeDao {
         updatedAt: new Date()
       };
 
-      // Update stake record
-      await db.update(stakeRecords)
-        .set(dbStake)
-        .where(eq(stakeRecords.id, stake.id));
+      await db.update(stakeRecords).set(dbStake).where(eq(stakeRecords.id, stake.id));
+      console.log(`[StakeDAO] Stake record ${stake.id} updated successfully in DB.`);
       
-      // Update pool statistics if active status changed
       if (existingStake.isActive !== stake.isActive) {
+        console.log(`[StakeDAO] Stake ${stake.id} active status changed, updating pool statistics for pool ${stake.poolId}.`);
         await this.updatePoolStatistics(stake.poolId);
       }
       
-      // Return updated stake record
       return stake;
     } catch (error) {
-      console.error('Error updating stake record:', error);
-      throw new Error('Failed to update stake record');
+      console.error(`[StakeDAO] Error updating stake record ${stake.id}:`, error.message);
+      throw new Error(`Failed to update stake record ${stake.id}: ${error.message}`);
     }
   }
 
@@ -230,22 +218,29 @@ export class StakeDao {
    * @returns Updated stake record
    */
   async endStake(stakeId: string, endTime: number): Promise<StakeRecord | undefined> {
+    console.log(`[StakeDAO] endStake called for stake ID: ${stakeId} with endTime: ${endTime}`);
     try {
-      // Get existing stake
-      const stake = await this.getStakeById(stakeId);
-      if (!stake || !stake.isActive) {
+      const stake = await this.getStakeById(stakeId); // getStakeById already logs
+      if (!stake) {
+        console.log(`[StakeDAO] Stake ${stakeId} not found, cannot end.`);
         return undefined;
       }
-      
-      // Update stake
+      if (!stake.isActive) {
+        console.log(`[StakeDAO] Stake ${stakeId} is already inactive, cannot end.`);
+        return undefined;
+      }
+
       stake.isActive = false;
       stake.endTime = endTime;
       
-      // Save updated stake
-      return await this.updateStakeRecord(stake);
+      stake.isActive = false;
+      stake.endTime = endTime;
+      
+      console.log(`[StakeDAO] Marking stake ${stakeId} as inactive and setting end time.`);
+      return await this.updateStakeRecord(stake); // updateStakeRecord already logs
     } catch (error) {
-      console.error('Error ending stake:', error);
-      throw new Error('Failed to end stake');
+      console.error(`[StakeDAO] Error ending stake ${stakeId}:`, error.message);
+      throw new Error(`Failed to end stake ${stakeId}: ${error.message}`);
     }
   }
 
@@ -254,12 +249,10 @@ export class StakeDao {
    * @returns Array of staking pools
    */
   async getStakingPools(): Promise<StakingPool[]> {
+    console.log(`[StakeDAO] getStakingPools called.`);
     try {
-      const result = await db.select()
-        .from(stakingPools)
-        .orderBy(desc(stakingPools.apr));
-      
-      // Convert database format to StakingPool[]
+      const result = await db.select().from(stakingPools).orderBy(desc(stakingPools.apr));
+      console.log(`[StakeDAO] Found ${result.length} staking pools.`);
       return result.map(dbPool => ({
         id: dbPool.id,
         name: dbPool.name,
@@ -271,8 +264,8 @@ export class StakeDao {
         activeStakers: dbPool.activeStakers
       }));
     } catch (error) {
-      console.error('Error getting staking pools:', error);
-      throw new Error('Failed to get staking pools');
+      console.error(`[StakeDAO] Error getting staking pools:`, error.message);
+      throw new Error(`Failed to get staking pools: ${error.message}`);
     }
   }
 
@@ -282,18 +275,17 @@ export class StakeDao {
    * @returns Staking pool or undefined if not found
    */
   async getStakingPoolById(id: string): Promise<StakingPool | undefined> {
+    console.log(`[StakeDAO] getStakingPoolById called for ID: ${id}`);
     try {
-      const result = await db.select()
-        .from(stakingPools)
-        .where(eq(stakingPools.id, id))
-        .limit(1);
+      const result = await db.select().from(stakingPools).where(eq(stakingPools.id, id)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[StakeDAO] Staking pool with ID ${id} not found.`);
         return undefined;
       }
-      
-      // Convert database format to StakingPool
+      console.log(`[StakeDAO] Staking pool with ID ${id} found: ${result[0].name}`);
       const dbPool = result[0];
+      // Removed duplicate const dbPool = result[0];
       return {
         id: dbPool.id,
         name: dbPool.name,
@@ -305,8 +297,8 @@ export class StakeDao {
         activeStakers: dbPool.activeStakers
       };
     } catch (error) {
-      console.error('Error getting staking pool by ID:', error);
-      throw new Error('Failed to get staking pool');
+      console.error(`[StakeDAO] Error getting staking pool by ID ${id}:`, error.message);
+      throw new Error(`Failed to get staking pool for ID ${id}: ${error.message}`);
     }
   }
 
@@ -316,8 +308,8 @@ export class StakeDao {
    * @returns Created staking pool
    */
   async createStakingPool(pool: StakingPool): Promise<StakingPool> {
+    console.log(`[StakeDAO] createStakingPool called for pool ID: ${pool.id}, Name: ${pool.name}`);
     try {
-      // Convert staking pool to database format
       const dbPool = {
         id: pool.id,
         name: pool.name,
@@ -329,14 +321,12 @@ export class StakeDao {
         activeStakers: pool.activeStakers
       };
 
-      // Insert staking pool
       await db.insert(stakingPools).values(dbPool);
-      
-      // Return original staking pool
+      console.log(`[StakeDAO] Staking pool ${pool.id} - ${pool.name} created successfully.`);
       return pool;
     } catch (error) {
-      console.error('Error creating staking pool:', error);
-      throw new Error('Failed to create staking pool');
+      console.error(`[StakeDAO] Error creating staking pool ${pool.id}:`, error.message);
+      throw new Error(`Failed to create staking pool ${pool.id}: ${error.message}`);
     }
   }
 
@@ -346,14 +336,15 @@ export class StakeDao {
    * @returns Updated staking pool
    */
   async updateStakingPool(pool: StakingPool): Promise<StakingPool> {
+    console.log(`[StakeDAO] updateStakingPool called for pool ID: ${pool.id}, Name: ${pool.name}`);
     try {
-      // Check if pool exists
-      const existingPool = await this.getStakingPoolById(pool.id);
+      const existingPool = await this.getStakingPoolById(pool.id); // getStakingPoolById already logs
       if (!existingPool) {
-        return this.createStakingPool(pool);
+        console.log(`[StakeDAO] Staking pool ${pool.id} not found for update, attempting to create instead.`);
+        return this.createStakingPool(pool); // createStakingPool already logs
       }
       
-      // Convert staking pool to database format
+      console.log(`[StakeDAO] Updating staking pool ${pool.id} - ${pool.name} in DB.`);
       const dbPool = {
         name: pool.name,
         description: pool.description,
@@ -365,16 +356,12 @@ export class StakeDao {
         updatedAt: new Date()
       };
 
-      // Update staking pool
-      await db.update(stakingPools)
-        .set(dbPool)
-        .where(eq(stakingPools.id, pool.id));
-      
-      // Return updated staking pool
+      await db.update(stakingPools).set(dbPool).where(eq(stakingPools.id, pool.id));
+      console.log(`[StakeDAO] Staking pool ${pool.id} - ${pool.name} updated successfully.`);
       return pool;
     } catch (error) {
-      console.error('Error updating staking pool:', error);
-      throw new Error('Failed to update staking pool');
+      console.error(`[StakeDAO] Error updating staking pool ${pool.id}:`, error.message);
+      throw new Error(`Failed to update staking pool ${pool.id}: ${error.message}`);
     }
   }
 
@@ -383,22 +370,22 @@ export class StakeDao {
    * @param poolId Staking pool ID
    */
   private async updatePoolStatistics(poolId: string): Promise<void> {
+    console.log(`[StakeDAO] updatePoolStatistics called for pool ID: ${poolId}`);
     try {
-      // Get pool
-      const pool = await this.getStakingPoolById(poolId);
+      const pool = await this.getStakingPoolById(poolId); // getStakingPoolById already logs
       if (!pool) {
-        throw new Error(`Staking pool not found: ${poolId}`);
+        // Error already logged by getStakingPoolById if it throws, or it returns undefined.
+        // If it returned undefined, getStakingPoolById would have logged "not found".
+        // Throwing a new error here might be redundant if getStakingPoolById already threw.
+        // However, if it returned undefined, this provides a specific context.
+        console.error(`[StakeDAO] Cannot update statistics: Staking pool ${poolId} not found.`);
+        throw new Error(`Staking pool not found: ${poolId} when trying to update statistics.`);
       }
       
-      // Get active stakes for this pool
-      const activeStakes = await this.getActiveStakesByPoolId(poolId);
+      const activeStakes = await this.getActiveStakesByPoolId(poolId); // this method also logs
+      const totalStaked = activeStakes.reduce((sum, stake) => (BigInt(sum) + BigInt(stake.amount)).toString(), '0');
       
-      // Calculate total staked amount
-      const totalStaked = activeStakes.reduce((sum, stake) => {
-        return (BigInt(sum) + BigInt(stake.amount)).toString();
-      }, '0');
-      
-      // Update pool
+      console.log(`[StakeDAO] Updating statistics for pool ${poolId}: Total Staked = ${totalStaked}, Active Stakers = ${activeStakes.length}`);
       await db.update(stakingPools)
         .set({ 
           totalStaked,
@@ -406,9 +393,12 @@ export class StakeDao {
           updatedAt: new Date()
         })
         .where(eq(stakingPools.id, poolId));
+      console.log(`[StakeDAO] Pool statistics for ${poolId} updated successfully.`);
     } catch (error) {
-      console.error('Error updating pool statistics:', error);
-      throw new Error('Failed to update pool statistics');
+      // Avoid re-wrapping error if it's already specific from a sub-call that threw
+      const errorMessage = error.message.includes('Failed to get') ? error.message : `Failed to update pool statistics for ${poolId}: ${error.message}`;
+      console.error(`[StakeDAO] Error updating pool statistics for ${poolId}:`, error.message);
+      throw new Error(errorMessage);
     }
   }
 }

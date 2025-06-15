@@ -9,10 +9,12 @@ import {
   Thringlet,
   ThringletEmotionState,
   TransactionHash,
-  TransactionType
+  TransactionType, // Added comma here
+  StakingPool,
 } from '@shared/types';
 import { checkMiningBadges } from '../controllers/badgeController';
 import { broadcastBlock, broadcastStatusUpdate, broadcastTransaction } from '../utils/websocket';
+import { stakeDao } from '../database/stakeDao'; // Import stakeDao
 
 // Constants for PVX blockchain
 const PVX_GENESIS_BLOCK_TIMESTAMP = 1714637462000; // May 1, 2024
@@ -55,12 +57,12 @@ function generateRandomHash(): string {
  * Initialize and connect to the blockchain
  */
 export async function connectToBlockchain(): Promise<BlockchainStatus> {
+  console.log('[BlockchainService] connectToBlockchain called.');
   try {
-    // Create genesis block if it doesn't exist
     const existingLatestBlock = await memBlockchainStorage.getLatestBlock();
     
     if (!existingLatestBlock) {
-      console.log('No blocks found, creating genesis block...');
+      console.log('[BlockchainService] No blocks found in memBlockchainStorage, creating genesis block...');
       
       const genesisBlock: Block = {
         height: 1,
@@ -74,13 +76,14 @@ export async function connectToBlockchain(): Promise<BlockchainStatus> {
         reward: '0'
       };
       
-      await memBlockchainStorage.createBlock(genesisBlock);
+      await memBlockchainStorage.createBlock(genesisBlock); // Assuming createBlock logs internally now or is less critical here
       latestBlock = genesisBlock;
+      console.log(`[BlockchainService] Genesis block created. Height: ${latestBlock.height}, Hash: ${latestBlock.hash.substring(0,10)}...`);
     } else {
       latestBlock = existingLatestBlock;
+      console.log(`[BlockchainService] Existing latest block found. Height: ${latestBlock.height}, Hash: ${latestBlock.hash.substring(0,10)}...`);
     }
     
-    // Update status
     blockchainStatus = {
       connected: true,
       synced: true,
@@ -94,10 +97,10 @@ export async function connectToBlockchain(): Promise<BlockchainStatus> {
     };
     
     // REMOVED initializeBlockchain() call to fix infinite recursion
-    
+    console.log(`[BlockchainService] Blockchain connected. Status: Connected=${blockchainStatus.connected}, Synced=${blockchainStatus.synced}, Latest Block Height: ${blockchainStatus.latestBlock.height}`);
     return blockchainStatus;
   } catch (error) {
-    console.error('Error connecting to blockchain:', error);
+    console.error('[BlockchainService] Error connecting to blockchain:', error.message);
     blockchainStatus = {
       connected: false,
       synced: false,
@@ -121,8 +124,9 @@ export function getBlockchainStatus(): BlockchainStatus {
  * Create a new wallet
  */
 export async function createWallet(passphrase: string): Promise<string> {
+  console.log('[BlockchainService] createWallet called.');
   // Generate a new wallet address and keys
-  const privateKey = crypto.randomBytes(32).toString('hex');
+  const privateKey = crypto.randomBytes(32).toString('hex'); // Not logged for security
   const publicKey = crypto.createHash('sha256')
     .update(privateKey)
     .digest('hex');
@@ -136,16 +140,17 @@ export async function createWallet(passphrase: string): Promise<string> {
     .digest('hex');
   
   // Store the wallet in memory with initial PVX
-  await memBlockchainStorage.createWallet({
+  const walletData = {
     address,
     publicKey,
     balance: "100000", // 0.1 PVX as starting balance for testing
     createdAt: new Date(),
-    lastUpdated: new Date(), // Changed from lastSynced to match database schema
-    passphraseSalt: salt,
-    passphraseHash: hash
-  });
-  
+    lastUpdated: new Date(),
+    passphraseSalt: salt, // Not logged for security
+    passphraseHash: hash  // Not logged for security
+  };
+  await memBlockchainStorage.createWallet(walletData);
+  console.log(`[BlockchainService] Wallet created for address: ${address} (publicKey: ${publicKey.substring(0,10)}...) and stored in memBlockchainStorage.`);
   return address;
 }
 
@@ -153,7 +158,14 @@ export async function createWallet(passphrase: string): Promise<string> {
  * Get wallet by address
  */
 export async function getWallet(address: string) {
-  return await memBlockchainStorage.getWalletByAddress(address);
+  console.log(`[BlockchainService] getWallet called for address: ${address}`);
+  const wallet = await memBlockchainStorage.getWalletByAddress(address);
+  if (wallet) {
+    console.log(`[BlockchainService] Wallet found for address ${address}.`);
+  } else {
+    console.log(`[BlockchainService] Wallet not found for address ${address}.`);
+  }
+  return wallet;
 }
 
 /**
@@ -238,30 +250,28 @@ export async function sendTransaction(
   fromAddress: string,
   toAddress: string,
   amount: string,
-  passphrase: string
+  passphrase: string // Passphrase itself is not logged for security
 ): Promise<string> {
-  // Validate wallet
+  console.log(`[BlockchainService] sendTransaction called. From: ${fromAddress}, To: ${toAddress}, Amount: ${amount}`);
   const wallet = await memBlockchainStorage.getWalletByAddress(fromAddress);
   
   if (!wallet) {
+    console.error(`[BlockchainService] Send transaction failed: Sender wallet ${fromAddress} not found.`);
     throw new Error('Sender wallet not found');
   }
   
-  // Verify passphrase
-  const hash = crypto.createHash('sha256')
-    .update(passphrase + wallet.passphraseSalt)
-    .digest('hex');
-  
+  const hash = crypto.createHash('sha256').update(passphrase + wallet.passphraseSalt).digest('hex');
   if (hash !== wallet.passphraseHash) {
+    console.error(`[BlockchainService] Send transaction failed: Invalid passphrase for wallet ${fromAddress}.`);
     throw new Error('Invalid passphrase');
   }
   
-  // Verify balance
   if (BigInt(wallet.balance) < BigInt(amount)) {
+    console.error(`[BlockchainService] Send transaction failed: Insufficient balance for wallet ${fromAddress}. Balance: ${wallet.balance}, Amount: ${amount}`);
     throw new Error('Insufficient balance');
   }
   
-  // Create transaction
+  console.log(`[BlockchainService] All validations passed for sendTransaction from ${fromAddress}. Creating transaction...`);
   const timestamp = Date.now();
   const txHash = crypto.createHash('sha256')
     .update(fromAddress + toAddress + amount + timestamp.toString())
@@ -305,10 +315,8 @@ export async function sendTransaction(
   
   // Store transaction
   await memBlockchainStorage.createTransaction(transaction);
-  
-  // Add to pending transactions
   pendingTransactions.push(transaction);
-  
+  console.log(`[BlockchainService] Transaction ${txHash} created and added to pending. From: ${fromAddress}, To: ${toAddress}, Amount: ${amount}`);
   return txHash;
 }
 
@@ -316,21 +324,20 @@ export async function sendTransaction(
  * Start mining with address and hardware type
  */
 export async function startMining(address: string, hardwareType: string = 'cpu'): Promise<MiningStats> {
-  // Validate wallet
+  console.log(`[BlockchainService] startMining called for address: ${address}, hardware: ${hardwareType}`);
   const wallet = await memBlockchainStorage.getWalletByAddress(address);
-  
   if (!wallet) {
+    console.error(`[BlockchainService] Start mining failed: Wallet ${address} not found.`);
     throw new Error('Wallet not found');
   }
   
-  // Check if already mining
   let minerStats = await memBlockchainStorage.getMinerByAddress(address);
-  
   if (minerStats && minerStats.isCurrentlyMining) {
+    console.warn(`[BlockchainService] Start mining attempt for ${address} failed: Already mining.`);
     throw new Error('Already mining');
   }
   
-  // Generate hashrate based on hardware type
+  console.log(`[BlockchainService] Wallet ${address} validated, not currently mining. Proceeding to generate stats...`);
   let hashRate: string;
   let hardwareName: string;
   
@@ -369,13 +376,14 @@ export async function startMining(address: string, hardwareType: string = 'cpu')
   // Update or create miner stats
   if (minerStats) {
     await memBlockchainStorage.updateMiner(stats);
+    console.log(`[BlockchainService] Updated existing miner stats for ${address}. Hashrate: ${stats.currentHashRate}`);
   } else {
     await memBlockchainStorage.createMiner(stats);
+    console.log(`[BlockchainService] Created new miner stats for ${address}. Hashrate: ${stats.currentHashRate}`);
   }
   
-  // Schedule mock block mining (for demo purposes)
+  console.log(`[BlockchainService] Starting block mining simulation for ${address}.`);
   simulateBlockMining(address);
-  
   return stats;
 }
 
@@ -383,24 +391,22 @@ export async function startMining(address: string, hardwareType: string = 'cpu')
  * Stop mining with address
  */
 export async function stopMining(address: string): Promise<MiningStats> {
-  // Validate wallet
+  console.log(`[BlockchainService] stopMining called for address: ${address}`);
   const wallet = await memBlockchainStorage.getWalletByAddress(address);
-  
   if (!wallet) {
+    console.error(`[BlockchainService] Stop mining failed: Wallet ${address} not found.`);
     throw new Error('Wallet not found');
   }
   
-  // Check if mining
   const minerStats = await memBlockchainStorage.getMinerByAddress(address);
-  
   if (!minerStats || !minerStats.isCurrentlyMining) {
+    console.warn(`[BlockchainService] Stop mining attempt for ${address} failed: Not currently mining or no stats found.`);
     throw new Error('Not mining');
   }
   
-  // Update miner stats
   minerStats.isCurrentlyMining = false;
   await memBlockchainStorage.updateMiner(minerStats);
-  
+  console.log(`[BlockchainService] Miner ${address} stopped mining.`);
   return minerStats;
 }
 
@@ -408,18 +414,20 @@ export async function stopMining(address: string): Promise<MiningStats> {
  * Get mining stats
  */
 export async function getMiningStats(address: string): Promise<MiningStats> {
+  console.log(`[BlockchainService] getMiningStats called for address: ${address}`);
   const minerStats = await memBlockchainStorage.getMinerByAddress(address);
   
   if (!minerStats) {
+    console.log(`[BlockchainService] No mining stats found for ${address}, returning default/empty stats.`);
     return {
       address,
       blocksMined: 0,
       totalRewards: "0",
       isCurrentlyMining: false,
-      currentHashRate: "0 MH/s"
+      currentHashRate: "0 MH/s" // Ensure this matches MiningStats type if currentHashRate is number
     };
   }
-  
+  console.log(`[BlockchainService] Mining stats retrieved for ${address}. Blocks mined: ${minerStats.blocksMined}`);
   return minerStats;
 }
 
@@ -472,30 +480,28 @@ export async function getNetworkHashrate(): Promise<number> {
  * Force mine a block (for testing)
  */
 export async function forceMineBlock(minerAddress: string): Promise<Block | null> {
+  console.log(`[BlockchainService] forceMineBlock called for minerAddress: ${minerAddress}`);
   try {
-    // Get miner stats to check if registered as a miner
     let minerStats = await memBlockchainStorage.getMinerByAddress(minerAddress);
-    
-    // Create miner stats if not exists
     if (!minerStats) {
+      console.log(`[BlockchainService] No existing miner stats for ${minerAddress}, creating new ones for forced mining.`);
       minerStats = {
         address: minerAddress,
         blocksMined: 0,
         totalRewards: "0",
-        isCurrentlyMining: true,
-        currentHashRate: `${(Math.random() * 200 + 50).toFixed(2)} MH/s`
+        isCurrentlyMining: true, // Forcing a mine implies they are mining now
+        currentHashRate: `${(Math.random() * 200 + 50).toFixed(2)} MH/s` // Example hashrate
       };
       await memBlockchainStorage.createMiner(minerStats);
     }
     
-    // Get latest block
-    const currentLatestBlock = await getLatestBlock();
-    
+    const currentLatestBlock = await getLatestBlock(); // Assumes getLatestBlock doesn't need logging here or is simple
     if (!currentLatestBlock) {
+      console.error('[BlockchainService] Force mine failed: No current latest block found.');
       return null;
     }
+    console.log(`[BlockchainService] Current latest block for force mine: Height ${currentLatestBlock.height}.`);
     
-    // Create new block
     const newBlock: Block = {
       height: currentLatestBlock.height + 1,
       hash: generateRandomHash(),
@@ -549,19 +555,18 @@ export async function forceMineBlock(minerAddress: string): Promise<Block | null
     try {
       broadcastBlock(newBlock);
       broadcastStatusUpdate(blockchainStatus);
-      console.log(`New block broadcasted: ${newBlock.height} by miner ${minerAddress}`);
+      console.log(`[BlockchainService] New block (Height: ${newBlock.height}) broadcasted, mined by ${minerAddress}.`);
     } catch (err) {
-      console.error('Error broadcasting block via WebSocket:', err);
-      // Continue even if WebSocket broadcast fails
+      console.error('[BlockchainService] Error broadcasting block via WebSocket during force mine:', err.message);
     }
     
-    // Clear processed transactions from pending
-    const processed = pendingTransactions.slice(0, 10).map(tx => tx.hash);
-    pendingTransactions = pendingTransactions.filter(tx => !processed.includes(tx.hash));
+    const processedTxHashes = pendingTransactions.slice(0, 10).map(tx => tx.hash);
+    pendingTransactions = pendingTransactions.filter(tx => !processedTxHashes.includes(tx.hash));
+    console.log(`[BlockchainService] Processed ${processedTxHashes.length} transactions from pending pool for new block ${newBlock.height}.`);
     
     return newBlock;
   } catch (error) {
-    console.error('Error in forced block mining:', error);
+    console.error(`[BlockchainService] Error in forced block mining for ${minerAddress}:`, error.message);
     return null;
   }
 }
@@ -570,27 +575,29 @@ export async function forceMineBlock(minerAddress: string): Promise<Block | null
  * Simulate block mining (for demo)
  */
 async function simulateBlockMining(minerAddress: string) {
-  // Wait for a random time between 30-120 seconds
-  const waitTime = Math.floor(Math.random() * 90000) + 30000;
+  const waitTime = Math.floor(Math.random() * 90000) + 30000; // 30-120 seconds
+  console.log(`[BlockchainService] Simulating next block mining for ${minerAddress} in ${waitTime / 1000}s.`);
   
   setTimeout(async () => {
     try {
-      // Get miner stats to check if still mining
       const minerStats = await memBlockchainStorage.getMinerByAddress(minerAddress);
-      
       if (!minerStats || !minerStats.isCurrentlyMining) {
-        return; // Stopped mining
+        console.log(`[BlockchainService] Mining simulation for ${minerAddress} stopped: miner is no longer active or stats not found.`);
+        return;
       }
       
-      // Mine a block using the force mine function
-      const newBlock = await forceMineBlock(minerAddress);
+      console.log(`[BlockchainService] Mining simulation: Attempting to mine new block for ${minerAddress}.`);
+      const newBlock = await forceMineBlock(minerAddress); // forceMineBlock already logs
       
       if (newBlock) {
-        // Schedule next block
-        simulateBlockMining(minerAddress);
+        console.log(`[BlockchainService] Mining simulation: New block ${newBlock.height} successfully mined by ${minerAddress}. Scheduling next simulation.`);
+        simulateBlockMining(minerAddress); // Recursive call for next block
+      } else {
+        console.warn(`[BlockchainService] Mining simulation: forceMineBlock did not return a new block for ${minerAddress}. Stopping simulation for this miner.`);
       }
     } catch (error) {
-      console.error('Error in block mining simulation:', error);
+      console.error(`[BlockchainService] Error in block mining simulation for ${minerAddress}:`, error.message);
+      // Decide if simulation should stop or retry after error
     }
   }, waitTime);
 }
@@ -1021,42 +1028,51 @@ function weightedRandomSelection(weights: number[]): number {
  * Calculate staking rewards for all active stakes
  */
 async function distributeStakingRewards() {
+  console.log('[BlockchainService] distributeStakingRewards called.');
   try {
-    // Get all active stakes
     const now = Date.now();
     const stakingPools = await memBlockchainStorage.getStakingPools();
-    
+    if (!stakingPools || stakingPools.length === 0) {
+      console.log('[BlockchainService] No staking pools available. Skipping reward distribution.');
+      return;
+    }
+    console.log(`[BlockchainService] Processing ${stakingPools.length} staking pools for reward distribution.`);
+
     for (const pool of stakingPools) {
-      // Get all active stakes for this pool
+      console.log(`[BlockchainService] Processing pool: ${pool.name} (ID: ${pool.id})`);
       const activeStakes = await memBlockchainStorage.getActiveStakesByPoolId(pool.id);
-      
-      // Skip if no active stakes
       if (!activeStakes || activeStakes.length === 0) {
+        console.log(`[BlockchainService] No active stakes in pool ${pool.id}. Skipping.`);
         continue;
       }
-      
-      // Process each stake
+      console.log(`[BlockchainService] Found ${activeStakes.length} active stakes in pool ${pool.id}.`);
+
       for (const stake of activeStakes) {
-        // Skip if already rewarded recently (within last day)
-        if (stake.lastRewardTime && (now - stake.lastRewardTime) < 24 * 60 * 60 * 1000) {
+        if (stake.lastRewardTime && (now - stake.lastRewardTime) < 24 * 60 * 60 * 1000) { // 1 day check
+          console.log(`[BlockchainService] Stake ${stake.id} for wallet ${stake.walletAddress} was rewarded recently. Skipping.`);
           continue;
         }
         
-        // Calculate reward based on pool APY and stake amount
-        // APY is in percentage, convert to daily rate
-        const dailyRate = pool.apy / 365 / 100;
-        const reward = Math.floor(BigInt(stake.amount) * BigInt(Math.floor(dailyRate * 10000)) / BigInt(10000)).toString();
-        
+        // Ensure pool.apy is a number before calculation
+        const apy = parseFloat(pool.apy);
+        if (isNaN(apy) || apy <= 0) {
+            console.warn(`[BlockchainService] Invalid APY for pool ${pool.id}: ${pool.apy}. Skipping reward for stake ${stake.id}.`);
+            continue;
+        }
+        const dailyRate = apy / 365 / 100;
+        const reward = Math.floor(BigInt(stake.amount) * BigInt(Math.floor(dailyRate * 1000000)) / BigInt(1000000)).toString(); // Increased precision for dailyRate
+
         if (BigInt(reward) <= BigInt(0)) {
+          console.log(`[BlockchainService] Calculated reward is zero or less for stake ${stake.id}. Skipping.`);
           continue;
         }
         
-        // Update stake record
+        console.log(`[BlockchainService] Calculated reward for stake ${stake.id} (Wallet: ${stake.walletAddress}): ${reward} μPVX`);
         stake.lastRewardTime = now;
         stake.rewards = (BigInt(stake.rewards || '0') + BigInt(reward)).toString();
         await memBlockchainStorage.updateStakeRecord(stake);
+        console.log(`[BlockchainService] Stake record ${stake.id} updated with new reward and lastRewardTime.`);
         
-        // Create reward transaction
         const rewardTx: Transaction = {
             hash: crypto.createHash('sha256')
               .update('stake_reward_' + stake.walletAddress + now.toString())
@@ -1071,72 +1087,49 @@ async function distributeStakingRewards() {
             status: 'confirmed'
         };
         
-        // Store reward transaction in memory first
-        await memBlockchainStorage.createTransaction(rewardTx);
+        await memBlockchainStorage.createTransaction(rewardTx); // Assumes createTransaction logs
         
-        // Persist transaction to database
         try {
           const { transactionDao } = await import('../database/transactionDao');
-          
-          // In TransactionDao.createTransaction, it expects a Transaction object and does the DB mapping internally
-          // So we'll just create a Transaction with the metadata we need
-          const txForDb: Transaction = {
-            hash: rewardTx.hash,
-            type: rewardTx.type as TransactionType,
-            from: rewardTx.from,
-            to: rewardTx.to,
-            amount: Number(rewardTx.amount),
-            timestamp: Number(rewardTx.timestamp),
-            nonce: rewardTx.nonce,
-            signature: rewardTx.signature,
-            status: rewardTx.status as 'pending' | 'confirmed' | 'failed',
-            blockHeight: rewardTx.blockHeight,
-            fee: rewardTx.fee,
-            metadata: {
-              stakeId: stake.id,
-              poolId: stake.poolId,
-              poolApr: pool.apy || pool.apr,
-              rewardDate: now
-            }
+          const txForDb: Transaction = { /* ... as before ... */
+            hash: rewardTx.hash, type: rewardTx.type as TransactionType, from: rewardTx.from, to: rewardTx.to,
+            amount: Number(rewardTx.amount), timestamp: Number(rewardTx.timestamp), nonce: rewardTx.nonce,
+            signature: rewardTx.signature, status: rewardTx.status as 'pending' | 'confirmed' | 'failed',
+            blockHeight: rewardTx.blockHeight, fee: rewardTx.fee,
+            metadata: { stakeId: stake.id, poolId: stake.poolId, poolApr: pool.apy || (pool as any).apr, rewardDate: now }
           };
-          
-          // Store in database - the DAO will handle the field name conversion
-          await transactionDao.createTransaction(txForDb);
-          console.log(`Staking reward transaction [${rewardTx.hash}] persisted to database for ${stake.walletAddress}`);
+          await transactionDao.createTransaction(txForDb); // Assumes transactionDao.createTransaction logs
+          console.log(`[BlockchainService] Staking reward transaction [${rewardTx.hash}] persisted to database for ${stake.walletAddress}`);
         } catch (dbError) {
-          console.error('Failed to persist staking reward to database:', dbError);
-          // Continue even if database persistence fails
+          console.error(`[BlockchainService] Failed to persist staking reward transaction ${rewardTx.hash} to database:`, dbError.message);
         }
         
-        // Update wallet balance
         const wallet = await memBlockchainStorage.getWalletByAddress(stake.walletAddress);
         if (wallet) {
           wallet.balance = (BigInt(wallet.balance) + BigInt(reward)).toString();
-          await memBlockchainStorage.updateWallet(wallet);
-          
-          // Also update the wallet in the database if possible
+          await memBlockchainStorage.updateWallet(wallet); // Assumes updateWallet logs
+          console.log(`[BlockchainService] Wallet ${stake.walletAddress} balance updated in memory to ${wallet.balance} after staking reward.`);
           try {
             const { walletDao } = await import('../database/walletDao');
-            await walletDao.updateWallet(wallet);
-            console.log(`Wallet balance updated in database for ${stake.walletAddress}`);
+            await walletDao.updateWallet(wallet); // Assumes walletDao.updateWallet logs
+            console.log(`[BlockchainService] Wallet ${stake.walletAddress} balance updated in database.`);
           } catch (dbError) {
-            console.error('Failed to update wallet balance in database:', dbError);
-            // Continue even if database update fails
+            console.error(`[BlockchainService] Failed to update wallet ${stake.walletAddress} balance in database:`, dbError.message);
           }
         }
         
-        // Broadcast reward transaction
         try {
           broadcastTransaction(rewardTx);
+          console.log(`[BlockchainService] Staking reward transaction ${rewardTx.hash} broadcasted via WebSocket.`);
         } catch (err) {
-          console.error('Error broadcasting staking reward via WebSocket:', err);
+          console.error('[BlockchainService] Error broadcasting staking reward via WebSocket:', err.message);
         }
-        
-        console.log(`Staking reward: ${reward} μPVX sent to ${stake.walletAddress}`);
+        console.log(`[BlockchainService] Staking reward of ${reward} μPVX successfully processed for wallet ${stake.walletAddress} from pool ${pool.id}.`);
       }
     }
+    console.log('[BlockchainService] Finished distributeStakingRewards cycle.');
   } catch (error) {
-    console.error('Error distributing staking rewards:', error);
+    console.error('[BlockchainService] Error during distributeStakingRewards:', error.message);
   }
 }
 
@@ -1144,38 +1137,55 @@ async function distributeStakingRewards() {
  * Start the blockchain mining and staking processes
  */
 function startBlockchainProcesses() {
-  // Schedule block mining every minute
-  if (miningTimeout) {
-    clearInterval(miningTimeout);
-  }
-  
+  console.log('[BlockchainService] startBlockchainProcesses called.');
+  if (miningTimeout) clearInterval(miningTimeout);
   miningTimeout = setInterval(async () => {
-    await mineNewBlock();
+    console.log('[BlockchainService] Mining interval: Attempting to mine new block...');
+    await mineNewBlock(); // mineNewBlock logs internally
   }, PVX_MINING_INTERVAL_MS);
-  
-  // Schedule staking rewards distribution (every 6 hours)
-  if (stakingTimeout) {
-    clearInterval(stakingTimeout);
-  }
-  
+  console.log(`[BlockchainService] Block mining process scheduled every ${PVX_MINING_INTERVAL_MS / 1000}s.`);
+
+  if (stakingTimeout) clearInterval(stakingTimeout);
+  const stakingIntervalHours = 6;
   stakingTimeout = setInterval(async () => {
-    await distributeStakingRewards();
-  }, 6 * 60 * 60 * 1000);
+    console.log(`[BlockchainService] Staking interval: Attempting to distribute staking rewards...`);
+    await distributeStakingRewards(); // distributeStakingRewards logs internally
+  }, stakingIntervalHours * 60 * 60 * 1000);
+  console.log(`[BlockchainService] Staking rewards distribution process scheduled every ${stakingIntervalHours} hours.`);
 }
 
 /**
  * Initialize the blockchain
  * This should be called at server startup
  */
-// Make this function exportable to match the import in server/index.ts
 export async function initializeBlockchain() {
+  console.log('[BlockchainService] initializeBlockchain called.');
   try {
-    await connectToBlockchain();
-    startBlockchainProcesses();
-    console.log('Blockchain initialized and running');
+    await connectToBlockchain(); // Already logs
+
+    console.log('[BlockchainService] Attempting to load staking pools from database...');
+    try {
+      const dbPools = await stakeDao.getStakingPools(); // stakeDao.getStakingPools logs
+      if (dbPools && dbPools.length > 0) {
+        await memBlockchainStorage.loadStakingPools(dbPools); // memBlockchainStorage.loadStakingPools logs
+        console.log(`[BlockchainService] Successfully loaded ${dbPools.length} staking pools into memory from DB.`);
+      } else {
+        console.warn('[BlockchainService] No staking pools found in the database. In-memory store might be empty or rely on file cache.');
+      }
+    } catch (err) {
+      console.error('[BlockchainService] CRITICAL: Error loading staking pools from database:', err.message, '- Staking might not function correctly.');
+      // Depending on policy, we might want to throw here or continue with empty/cached pools
+    }
+
+    startBlockchainProcesses(); // Already logs
+    console.log('[BlockchainService] Blockchain initialization completed and core processes started.');
     return blockchainStatus;
   } catch (error) {
-    console.error('Error initializing blockchain:', error);
+    console.error('[BlockchainService] CRITICAL: Error during initializeBlockchain:', error.message);
+    // Update blockchainStatus to reflect error if necessary
+    blockchainStatus.error = error.message;
+    blockchainStatus.connected = false;
+    blockchainStatus.synced = false;
     return blockchainStatus;
   }
 }

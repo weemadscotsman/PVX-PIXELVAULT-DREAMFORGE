@@ -13,12 +13,17 @@ export class MiningService {
    * Get the current block reward
    */
   async getCurrentBlockReward(): Promise<number> {
+    console.log(`[MiningService] getCurrentBlockReward called.`);
     try {
       const blockHeight = await this.storage.getCurrentBlockHeight();
-      return calculateBlockReward(blockHeight);
+      const reward = calculateBlockReward(blockHeight);
+      console.log(`[MiningService] Current block height: ${blockHeight}, Calculated reward: ${reward}.`);
+      return reward;
     } catch (error) {
-      console.error("Error getting current block reward:", error);
-      return 150; // Default fallback value
+      console.error("[MiningService] Error getting current block reward:", error.message);
+      const fallbackReward = 150;
+      console.warn(`[MiningService] Returning fallback block reward: ${fallbackReward}.`);
+      return fallbackReward;
     }
   }
 
@@ -30,9 +35,11 @@ export class MiningService {
     total: number;
     nextEstimate: string;
   }> {
+    console.log(`[MiningService] getHalvingProgress called.`);
     try {
       const blockHeight = await this.storage.getCurrentBlockHeight();
-      const halvingInterval = 210000; // Per PVX specs, same as Bitcoin
+      console.log(`[MiningService] Current block height for halving progress: ${blockHeight}.`);
+      const halvingInterval = 210000;
       
       const currentHalvingPeriod = Math.floor(blockHeight / halvingInterval);
       const nextHalvingHeight = (currentHalvingPeriod + 1) * halvingInterval;
@@ -40,9 +47,8 @@ export class MiningService {
       const current = blockHeight % halvingInterval;
       const total = halvingInterval;
       
-      // Estimate next halving (assuming 15 seconds per block)
       const blocksRemaining = nextHalvingHeight - blockHeight;
-      const secondsRemaining = blocksRemaining * 15;
+      const secondsRemaining = blocksRemaining * 15; // Assuming 15 seconds per block
       const daysRemaining = Math.ceil(secondsRemaining / (60 * 60 * 24));
       
       let nextEstimate: string;
@@ -56,19 +62,14 @@ export class MiningService {
         nextEstimate = `~${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'}`;
       }
       
-      return {
-        current,
-        total,
-        nextEstimate
-      };
+      const progress = { current, total, nextEstimate };
+      console.log(`[MiningService] Halving progress: Current=${current}, Total=${total}, Next Estimate=${nextEstimate}.`);
+      return progress;
     } catch (error) {
-      console.error("Error getting halving progress:", error);
-      // Return default fallback values
-      return {
-        current: 0,
-        total: 210000,
-        nextEstimate: "~4 years"
-      };
+      console.error("[MiningService] Error getting halving progress:", error.message);
+      const fallbackProgress = { current: 0, total: 210000, nextEstimate: "~4 years" };
+      console.warn(`[MiningService] Returning fallback halving progress.`);
+      return fallbackProgress;
     }
   }
 
@@ -81,24 +82,22 @@ export class MiningService {
     staking: number;
     reserve: number;
   }> {
+    console.log(`[MiningService] getRewardDistribution called.`);
     try {
-      const blockReward = await this.getCurrentBlockReward();
-      
-      return {
-        miner: blockReward * 0.5, // 50% to miner
-        governance: blockReward * 0.25, // 25% to governance
-        staking: blockReward * 0.15, // 15% to staking pool
-        reserve: blockReward * 0.1 // 10% to vault reserve
+      const blockReward = await this.getCurrentBlockReward(); // Already logs
+      const distribution = {
+        miner: blockReward * 0.5,
+        governance: blockReward * 0.25,
+        staking: blockReward * 0.15,
+        reserve: blockReward * 0.1
       };
+      console.log(`[MiningService] Calculated reward distribution for block reward ${blockReward}:`, distribution);
+      return distribution;
     } catch (error) {
-      console.error("Error getting reward distribution:", error);
-      // Return default fallback values
-      return {
-        miner: 75,
-        governance: 37.5,
-        staking: 22.5,
-        reserve: 15
-      };
+      console.error("[MiningService] Error getting reward distribution:", error.message);
+      const fallbackDistribution = { miner: 75, governance: 37.5, staking: 22.5, reserve: 15 };
+      console.warn(`[MiningService] Returning fallback reward distribution.`);
+      return fallbackDistribution;
     }
   }
 
@@ -106,10 +105,11 @@ export class MiningService {
    * Start mining for an address
    */
   async startMining(address: string, threads: number = 2): Promise<boolean> {
-    // Get or create mining stats for the address
+    console.log(`[MiningService] startMining called for address: ${address}, threads: ${threads}.`);
     let stats = await this.storage.getMiningStats(address);
     
     if (!stats) {
+      console.log(`[MiningService] No existing mining stats for ${address}. Creating new entry.`);
       stats = {
         address,
         blocksMined: 0,
@@ -119,12 +119,16 @@ export class MiningService {
       };
     }
     
-    // Update mining status
+    if (stats.isCurrentlyMining) {
+      console.warn(`[MiningService] Address ${address} is already mining. No action taken.`);
+      return true; // Or false, depending on desired behavior for already mining
+    }
+
     stats.isCurrentlyMining = true;
-    stats.currentHashRate = threads * 50; // Mock hash rate based on threads
+    stats.currentHashRate = threads * 50; // Mock hash rate
     
     await this.storage.updateMiningStats(stats);
-    
+    console.log(`[MiningService] Mining started for ${address}. Hashrate: ${stats.currentHashRate}.`);
     return true;
   }
 
@@ -132,19 +136,24 @@ export class MiningService {
    * Stop mining for an address
    */
   async stopMining(address: string): Promise<boolean> {
-    // Get mining stats for the address
+    console.log(`[MiningService] stopMining called for address: ${address}.`);
     const stats = await this.storage.getMiningStats(address);
     
     if (!stats) {
+      console.warn(`[MiningService] No mining stats found for ${address}. Cannot stop mining.`);
       return false;
     }
     
-    // Update mining status
+    if (!stats.isCurrentlyMining) {
+      console.warn(`[MiningService] Address ${address} is not currently mining. No action taken.`);
+      return true;
+    }
+
     stats.isCurrentlyMining = false;
     stats.currentHashRate = 0;
     
     await this.storage.updateMiningStats(stats);
-    
+    console.log(`[MiningService] Mining stopped for ${address}.`);
     return true;
   }
 
@@ -152,10 +161,11 @@ export class MiningService {
    * Get mining stats for an address
    */
   async getMiningStats(address: string): Promise<MiningStats> {
-    // Get or create mining stats for the address
+    console.log(`[MiningService] getMiningStats called for address: ${address}.`);
     let stats = await this.storage.getMiningStats(address);
     
     if (!stats) {
+      console.log(`[MiningService] No mining stats found for ${address}. Creating and returning default entry.`);
       stats = {
         address,
         blocksMined: 0,
@@ -163,9 +173,10 @@ export class MiningService {
         isCurrentlyMining: false,
         currentHashRate: 0
       };
-      await this.storage.updateMiningStats(stats);
+      // Optionally save the new default stats, or just return them transiently
+      // await this.storage.updateMiningStats(stats); // Uncomment if new stats should be persisted
     }
-    
+    console.log(`[MiningService] Retrieved mining stats for ${address}:`, stats);
     return stats;
   }
 
@@ -173,21 +184,24 @@ export class MiningService {
    * Get mining rewards for an address
    */
   async getMiningRewards(address: string): Promise<MiningReward[]> {
-    return this.storage.getMiningRewards(address);
+    console.log(`[MiningService] getMiningRewards called for address: ${address}.`);
+    const rewards = await this.storage.getMiningRewards(address);
+    console.log(`[MiningService] Found ${rewards.length} mining rewards for ${address}.`);
+    return rewards;
   }
 
   /**
    * Simulate mining a block
    */
   async simulateMining(address: string): Promise<MiningReward> {
-    // Get current block height
+    console.log(`[MiningService] simulateMining called for address: ${address}.`);
     const blockHeight = await this.storage.getCurrentBlockHeight() + 1;
+    console.log(`[MiningService] Simulating mining for new block height: ${blockHeight}.`);
     
-    // Calculate mining reward (50% of block reward)
-    const blockReward = calculateBlockReward(blockHeight);
+    const blockReward = calculateBlockReward(blockHeight); // Assuming this is a pure function
     const minerReward = blockReward * 0.5;
+    console.log(`[MiningService] Calculated miner reward for block ${blockHeight}: ${minerReward}.`);
     
-    // Create a mining reward
     const reward: Omit<MiningReward, 'id'> = {
       blockHeight,
       amount: minerReward,
@@ -195,20 +209,24 @@ export class MiningService {
       address
     };
     
-    // Add mining reward to storage
+    const reward: Omit<MiningReward, 'id'> = { blockHeight, amount: minerReward, timestamp: new Date(), address };
+
+    console.log(`[MiningService] Adding mining reward for ${address}, block ${blockHeight}.`);
     const miningReward = await this.storage.addMiningReward(reward);
     
-    // Create a transaction for the mining reward
-    await this.storage.createTransaction({
+    const rewardTx = {
       type: TransactionType.MINING_REWARD,
-      fromAddress: "zk_PVX:coinbase",
+      fromAddress: "zk_PVX:coinbase", // Consider making this a constant
       toAddress: address,
       amount: minerReward,
       timestamp: new Date(),
       blockHeight,
       note: `Block ${blockHeight} mining reward`
-    });
+    };
+    console.log(`[MiningService] Creating MINING_REWARD transaction for ${address}, block ${blockHeight}.`);
+    await this.storage.createTransaction(rewardTx);
     
+    console.log(`[MiningService] Mining simulation for ${address} completed. Reward ID: ${miningReward.id}`);
     return miningReward;
   }
 }

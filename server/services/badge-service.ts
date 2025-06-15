@@ -136,68 +136,90 @@ function ensureDataDirExists() {
 
 // Initialize badge service
 function initialize() {
+  console.log('[BadgeService] Initializing...');
   ensureDataDirExists();
   
-  // Load badges if file exists
+  // Load available badges
   try {
     if (fs.existsSync(BADGE_DATA_FILE)) {
       const badgeData = fs.readFileSync(BADGE_DATA_FILE, 'utf8');
-      availableBadges.push(...JSON.parse(badgeData));
+      const loadedBadges = JSON.parse(badgeData);
+      // Basic validation or merge strategy if needed
+      availableBadges.splice(0, availableBadges.length, ...loadedBadges); // Replace current with loaded
+      console.log(`[BadgeService] Loaded ${loadedBadges.length} badges from ${BADGE_DATA_FILE}`);
     } else {
-      // Save initial badges
+      console.log(`[BadgeService] ${BADGE_DATA_FILE} not found. Saving initial ${availableBadges.length} badges.`);
       fs.writeFileSync(BADGE_DATA_FILE, JSON.stringify(availableBadges, null, 2));
     }
   } catch (error) {
-    console.error('Error initializing badge data:', error);
+    console.error('[BadgeService] Error initializing available badges data:', error.message);
   }
   
-  // Load user badges if file exists
+  // Load user badges
   try {
     if (fs.existsSync(USER_BADGE_DATA_FILE)) {
       const userBadgeData = fs.readFileSync(USER_BADGE_DATA_FILE, 'utf8');
       userBadges = JSON.parse(userBadgeData);
+      console.log(`[BadgeService] Loaded ${userBadges.length} user badge entries from ${USER_BADGE_DATA_FILE}`);
     } else {
-      // Create empty user badges file
+      console.log(`[BadgeService] ${USER_BADGE_DATA_FILE} not found. Initializing with empty user badges and creating file.`);
       fs.writeFileSync(USER_BADGE_DATA_FILE, JSON.stringify([], null, 2));
     }
   } catch (error) {
-    console.error('Error initializing user badge data:', error);
+    console.error('[BadgeService] Error initializing user badges data:', error.message);
   }
+  console.log('[BadgeService] Initialization complete.');
 }
 
 // Save user badges to file
 function saveUserBadges() {
+  console.log(`[BadgeService] Attempting to save ${userBadges.length} user badge entries to ${USER_BADGE_DATA_FILE}`);
   try {
     fs.writeFileSync(USER_BADGE_DATA_FILE, JSON.stringify(userBadges, null, 2));
+    console.log(`[BadgeService] User badges saved successfully.`);
   } catch (error) {
-    console.error('Error saving user badge data:', error);
+    console.error('[BadgeService] Error saving user badge data:', error.message);
   }
 }
 
 // Get all available badges
 export function getAllBadges(): Badge[] {
+  console.log(`[BadgeService] getAllBadges called. Returning ${availableBadges.length} badges.`);
   return availableBadges;
 }
 
 // Get badge by ID
 export function getBadgeById(badgeId: string): Badge | undefined {
-  return availableBadges.find(badge => badge.id === badgeId);
+  console.log(`[BadgeService] getBadgeById called for ID: ${badgeId}`);
+  const badge = availableBadges.find(b => b.id === badgeId);
+  if (badge) {
+    console.log(`[BadgeService] Badge found for ID ${badgeId}: ${badge.name}`);
+  } else {
+    console.log(`[BadgeService] Badge with ID ${badgeId} not found.`);
+  }
+  return badge;
 }
 
 // Get badges for a user
 export function getUserBadges(userId: string): UserBadge[] {
-  return userBadges.filter(userBadge => userBadge.userId === userId);
+  console.log(`[BadgeService] getUserBadges called for UserID: ${userId}`);
+  const badges = userBadges.filter(userBadge => userBadge.userId === userId);
+  console.log(`[BadgeService] Found ${badges.length} badges for UserID: ${userId}.`);
+  return badges;
 }
 
 // Check if user has a specific badge
 export function checkUserHasBadge(userId: string, badgeId: string): boolean {
-  const userBadge = userBadges.find(
-    ub => ub.userId === userId && ub.badgeId === badgeId
-  );
-  return userBadge ? userBadge.obtained : false;
+  console.log(`[BadgeService] checkUserHasBadge called for UserID: ${userId}, BadgeID: ${badgeId}`);
+  const userBadge = userBadges.find(ub => ub.userId === userId && ub.badgeId === badgeId);
+  const hasBadge = userBadge ? userBadge.obtained : false;
+  console.log(`[BadgeService] User ${userId} ${hasBadge ? 'has' : 'does not have'} badge ${badgeId}.`);
+  return hasBadge;
 }
 
 // Update badge status for a user
+// Note: This service uses a simple in-memory array and file persistence.
+// For a production system, a database (via DAO) would be more appropriate.
 export async function updateBadgeStatus(
   userId: string,
   badgeId: string,

@@ -13,8 +13,8 @@ export class BlockDao {
    * @returns Created block
    */
   async createBlock(block: Block): Promise<Block> {
+    console.log(`[BlockDAO] createBlock called for height: ${block.height}, hash: ${block.hash}`);
     try {
-      // Convert block to database format
       const dbBlock = {
         height: block.height,
         hash: block.hash,
@@ -28,14 +28,12 @@ export class BlockDao {
         size: block.size,
       };
 
-      // Insert block
       await db.insert(blocks).values(dbBlock);
-      
-      // Return original block
+      console.log(`[BlockDAO] Block ${block.height} created successfully.`);
       return block;
     } catch (error) {
-      console.error('Error creating block:', error);
-      throw new Error('Failed to create block');
+      console.error(`[BlockDAO] Error creating block ${block.height}:`, error.message);
+      throw new Error(`Failed to create block ${block.height}: ${error.message}`);
     }
   }
 
@@ -45,17 +43,17 @@ export class BlockDao {
    * @returns Block or null if not found
    */
   async getBlockByHeight(height: number): Promise<Block | null> {
+    console.log(`[BlockDAO] getBlockByHeight called for height: ${height}`);
     try {
-      const result = await db.select()
-        .from(blocks)
-        .where(eq(blocks.height, height))
-        .limit(1);
+      const result = await db.select().from(blocks).where(eq(blocks.height, height)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[BlockDAO] Block with height ${height} not found.`);
         return null;
       }
       
-      // Convert database format to Block
+      console.log(`[BlockDAO] Block with height ${height} found.`);
+      const dbBlock = result[0];
       const dbBlock = result[0];
       return {
         height: dbBlock.height,
@@ -71,8 +69,8 @@ export class BlockDao {
         transactions: [] // Transactions need to be loaded separately
       };
     } catch (error) {
-      console.error('Error getting block by height:', error);
-      throw new Error('Failed to get block');
+      console.error(`[BlockDAO] Error getting block by height ${height}:`, error.message);
+      throw new Error(`Failed to get block by height ${height}: ${error.message}`);
     }
   }
 
@@ -82,17 +80,17 @@ export class BlockDao {
    * @returns Block or null if not found
    */
   async getBlockByHash(hash: string): Promise<Block | null> {
+    console.log(`[BlockDAO] getBlockByHash called for hash: ${hash}`);
     try {
-      const result = await db.select()
-        .from(blocks)
-        .where(eq(blocks.hash, hash))
-        .limit(1);
+      const result = await db.select().from(blocks).where(eq(blocks.hash, hash)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[BlockDAO] Block with hash ${hash} not found.`);
         return null;
       }
       
-      // Convert database format to Block
+      console.log(`[BlockDAO] Block with hash ${hash} found.`);
+      const dbBlock = result[0];
       const dbBlock = result[0];
       return {
         height: dbBlock.height,
@@ -108,8 +106,8 @@ export class BlockDao {
         transactions: [] // Transactions need to be loaded separately
       };
     } catch (error) {
-      console.error('Error getting block by hash:', error);
-      throw new Error('Failed to get block');
+      console.error(`[BlockDAO] Error getting block by hash ${hash}:`, error.message);
+      throw new Error(`Failed to get block by hash ${hash}: ${error.message}`);
     }
   }
 
@@ -118,17 +116,17 @@ export class BlockDao {
    * @returns Latest block or null if no blocks exist
    */
   async getLatestBlock(): Promise<Block | null> {
+    console.log(`[BlockDAO] getLatestBlock called.`);
     try {
-      const result = await db.select()
-        .from(blocks)
-        .orderBy(desc(blocks.height))
-        .limit(1);
+      const result = await db.select().from(blocks).orderBy(desc(blocks.height)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[BlockDAO] No blocks found in the database.`);
         return null;
       }
       
-      // Convert database format to Block
+      console.log(`[BlockDAO] Latest block found with height: ${result[0].height}.`);
+      const dbBlock = result[0];
       const dbBlock = result[0];
       return {
         height: dbBlock.height,
@@ -144,8 +142,8 @@ export class BlockDao {
         transactions: [] // Transactions need to be loaded separately
       };
     } catch (error) {
-      console.error('Error getting latest block:', error);
-      throw new Error('Failed to get latest block');
+      console.error(`[BlockDAO] Error getting latest block:`, error.message);
+      throw new Error(`Failed to get latest block: ${error.message}`);
     }
   }
 
@@ -155,13 +153,10 @@ export class BlockDao {
    * @returns Array of blocks
    */
   async getRecentBlocks(limit: number = 10): Promise<Block[]> {
+    console.log(`[BlockDAO] getRecentBlocks called with limit: ${limit}`);
     try {
-      const result = await db.select()
-        .from(blocks)
-        .orderBy(desc(blocks.height))
-        .limit(limit);
-      
-      // Convert database format to Block[]
+      const result = await db.select().from(blocks).orderBy(desc(blocks.height)).limit(limit);
+      console.log(`[BlockDAO] Found ${result.length} recent blocks.`);
       return result.map(dbBlock => ({
         height: dbBlock.height,
         hash: dbBlock.hash,
@@ -176,8 +171,8 @@ export class BlockDao {
         transactions: [] // Transactions need to be loaded separately
       }));
     } catch (error) {
-      console.error('Error getting recent blocks:', error);
-      throw new Error('Failed to get blocks');
+      console.error(`[BlockDAO] Error getting recent blocks:`, error.message);
+      throw new Error(`Failed to get recent blocks: ${error.message}`);
     }
   }
 
@@ -188,9 +183,9 @@ export class BlockDao {
    * @returns Array of blocks
    */
   async getBlocksByHeightRange(startHeight: number, endHeight: number): Promise<Block[]> {
+    console.log(`[BlockDAO] getBlocksByHeightRange called for range: ${startHeight}-${endHeight}`);
     try {
-      const result = await db.select()
-        .from(blocks)
+      const result = await db.select().from(blocks)
         .where(
           and(
             gte(blocks.height, startHeight),
@@ -198,8 +193,7 @@ export class BlockDao {
           )
         )
         .orderBy(desc(blocks.height));
-      
-      // Convert database format to Block[]
+      console.log(`[BlockDAO] Found ${result.length} blocks in height range ${startHeight}-${endHeight}.`);
       return result.map(dbBlock => ({
         height: dbBlock.height,
         hash: dbBlock.hash,
@@ -214,8 +208,8 @@ export class BlockDao {
         transactions: [] // Transactions need to be loaded separately
       }));
     } catch (error) {
-      console.error('Error getting blocks by height range:', error);
-      throw new Error('Failed to get blocks');
+      console.error(`[BlockDAO] Error getting blocks by height range ${startHeight}-${endHeight}:`, error.message);
+      throw new Error(`Failed to get blocks in range ${startHeight}-${endHeight}: ${error.message}`);
     }
   }
 
@@ -226,14 +220,13 @@ export class BlockDao {
    * @returns Array of blocks
    */
   async getBlocksByMiner(minerAddress: string, limit: number = 10): Promise<Block[]> {
+    console.log(`[BlockDAO] getBlocksByMiner called for miner: ${minerAddress}, limit: ${limit}`);
     try {
-      const result = await db.select()
-        .from(blocks)
+      const result = await db.select().from(blocks)
         .where(eq(blocks.miner, minerAddress))
         .orderBy(desc(blocks.height))
         .limit(limit);
-      
-      // Convert database format to Block[]
+      console.log(`[BlockDAO] Found ${result.length} blocks by miner ${minerAddress}.`);
       return result.map(dbBlock => ({
         height: dbBlock.height,
         hash: dbBlock.hash,
@@ -248,8 +241,8 @@ export class BlockDao {
         transactions: [] // Transactions need to be loaded separately
       }));
     } catch (error) {
-      console.error('Error getting blocks by miner:', error);
-      throw new Error('Failed to get blocks');
+      console.error(`[BlockDAO] Error getting blocks by miner ${minerAddress}:`, error.message);
+      throw new Error(`Failed to get blocks by miner ${minerAddress}: ${error.message}`);
     }
   }
 
@@ -258,16 +251,15 @@ export class BlockDao {
    * @returns Total number of blocks
    */
   async getTotalBlockCount(): Promise<number> {
+    console.log(`[BlockDAO] getTotalBlockCount called.`);
     try {
-      const result = await db.select({
-          count: db.fn.count(blocks.height)
-        })
-        .from(blocks);
-      
-      return Number(result[0]?.count || 0);
+      const result = await db.select({ count: db.fn.count(blocks.height) }).from(blocks);
+      const count = Number(result[0]?.count || 0);
+      console.log(`[BlockDAO] Total block count: ${count}.`);
+      return count;
     } catch (error) {
-      console.error('Error getting total block count:', error);
-      throw new Error('Failed to get total block count');
+      console.error(`[BlockDAO] Error getting total block count:`, error.message);
+      throw new Error(`Failed to get total block count: ${error.message}`);
     }
   }
 }

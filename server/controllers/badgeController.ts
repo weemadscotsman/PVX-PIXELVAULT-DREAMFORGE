@@ -4,119 +4,134 @@ import { BadgeType, TransactionType } from '../types';
 
 // Get all badges (visible ones only)
 export const getAllBadges = async (req: Request, res: Response) => {
+  console.log(`[BadgeController] getAllBadges: Request received ${req.method} ${req.originalUrl}`);
   try {
     const badges = badgeStorage.getAllVisibleBadges();
+    console.log(`[BadgeController] getAllBadges: Found ${badges.length} visible badges.`);
     res.json(badges);
   } catch (error: any) {
-    console.error('Error getting all badges:', error);
+    console.error('[BadgeController] getAllBadges: Error getting all badges:', error.message);
     res.status(500).json({ error: error.message || 'Failed to get badges' });
   }
 };
 
 // Get badge by ID
 export const getBadgeById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  console.log(`[BadgeController] getBadgeById: Request received ${req.method} ${req.originalUrl} for badge ID: ${id}`);
   try {
-    const { id } = req.params;
     const badge = badgeStorage.getBadgeById(id);
     
     if (!badge) {
+      console.log(`[BadgeController] getBadgeById: Badge with ID ${id} not found.`);
       return res.status(404).json({ error: 'Badge not found' });
     }
-    
+    console.log(`[BadgeController] getBadgeById: Badge ${id} found: ${badge.name}.`);
     res.json(badge);
   } catch (error: any) {
-    console.error('Error getting badge by ID:', error);
+    console.error(`[BadgeController] getBadgeById: Error getting badge by ID ${id}:`, error.message);
     res.status(500).json({ error: error.message || 'Failed to get badge' });
   }
 };
 
 // Get badges by type
 export const getBadgesByType = async (req: Request, res: Response) => {
+  const { type } = req.params;
+  console.log(`[BadgeController] getBadgesByType: Request received ${req.method} ${req.originalUrl} for badge type: ${type}`);
   try {
-    const { type } = req.params;
-    
     if (!Object.values(BadgeType).includes(type as BadgeType)) {
+      console.warn(`[BadgeController] getBadgesByType: Invalid badge type requested: ${type}`);
       return res.status(400).json({ error: 'Invalid badge type' });
     }
     
     const badges = badgeStorage.getBadgesByType(type as BadgeType);
+    console.log(`[BadgeController] getBadgesByType: Found ${badges.length} badges for type ${type}.`);
     res.json(badges);
   } catch (error: any) {
-    console.error('Error getting badges by type:', error);
+    console.error(`[BadgeController] getBadgesByType: Error getting badges by type ${type}:`, error.message);
     res.status(500).json({ error: error.message || 'Failed to get badges' });
   }
 };
 
 // Get user badges
 export const getUserBadges = async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  console.log(`[BadgeController] getUserBadges: Request received ${req.method} ${req.originalUrl} for UserID: ${userId}`);
   try {
-    const { userId } = req.params;
-    
     if (!userId) {
+      console.warn(`[BadgeController] getUserBadges: User ID is required, but not provided.`);
       return res.status(400).json({ error: 'User ID is required' });
     }
     
     const userBadges = badgeStorage.getUserBadgesWithDetails(userId);
+    console.log(`[BadgeController] getUserBadges: Found ${userBadges.length} badges for UserID: ${userId}.`);
     res.json(userBadges);
   } catch (error: any) {
-    console.error('Error getting user badges:', error);
+    console.error(`[BadgeController] getUserBadges: Error getting user badges for UserID ${userId}:`, error.message);
     res.status(500).json({ error: error.message || 'Failed to get user badges' });
   }
 };
 
 // Award badge to user
 export const awardBadgeToUser = async (req: Request, res: Response) => {
+  const { userId, badgeId } = req.body;
+  console.log(`[BadgeController] awardBadgeToUser: Request received ${req.method} ${req.originalUrl} - UserID: ${userId}, BadgeID: ${badgeId}`);
   try {
-    const { userId, badgeId } = req.body;
-    
     if (!userId || !badgeId) {
+      console.warn(`[BadgeController] awardBadgeToUser: User ID and Badge ID are required. Received UserID: ${userId}, BadgeID: ${badgeId}`);
       return res.status(400).json({ error: 'User ID and Badge ID are required' });
     }
     
-    const userBadge = badgeStorage.awardBadgeToUser(userId, badgeId);
+    console.log(`[BadgeController] awardBadgeToUser: Attempting to award badge ${badgeId} to user ${userId}.`);
+    const userBadge = badgeStorage.awardBadgeToUser(userId, badgeId); // Assuming badgeStorage logs internally
     
-    if (!userBadge) {
-      return res.status(404).json({ error: 'Badge not found' });
+    if (!userBadge) { // This case might be handled by awardBadgeToUser throwing an error if badge doesn't exist
+      console.warn(`[BadgeController] awardBadgeToUser: Badge ${badgeId} not found or could not be awarded to user ${userId}.`);
+      return res.status(404).json({ error: 'Badge not found or could not be awarded' });
     }
     
-    // Get the badge details to include in the response
-    const badge = badgeStorage.getBadgeById(badgeId);
-    
+    const badge = badgeStorage.getBadgeById(badgeId); // Assuming badgeStorage logs internally
+    console.log(`[BadgeController] awardBadgeToUser: Successfully awarded badge ${badgeId} (${badge?.name}) to user ${userId}.`);
     res.json({ ...userBadge, badge });
   } catch (error: any) {
-    console.error('Error awarding badge to user:', error);
+    console.error(`[BadgeController] awardBadgeToUser: Error awarding badge ${badgeId} to user ${userId}:`, error.message);
     res.status(500).json({ error: error.message || 'Failed to award badge' });
   }
 };
 
 // Update badge progress
 export const updateBadgeProgress = async (req: Request, res: Response) => {
+  const { userId, badgeId, progress } = req.body;
+  console.log(`[BadgeController] updateBadgeProgress: Request received ${req.method} ${req.originalUrl} - UserID: ${userId}, BadgeID: ${badgeId}, Progress: ${progress}`);
   try {
-    const { userId, badgeId, progress } = req.body;
-    
     if (!userId || !badgeId || progress === undefined) {
+      console.warn(`[BadgeController] updateBadgeProgress: User ID, Badge ID, and progress are required. Received UserID: ${userId}, BadgeID: ${badgeId}, Progress: ${progress}`);
       return res.status(400).json({ error: 'User ID, Badge ID and progress are required' });
     }
     
     if (typeof progress !== 'number' || progress < 0) {
+      console.warn(`[BadgeController] updateBadgeProgress: Progress must be a non-negative number. Received: ${progress}`);
       return res.status(400).json({ error: 'Progress must be a non-negative number' });
     }
     
-    const result = badgeStorage.updateBadgeProgress(userId, badgeId, progress);
-    const badge = badgeStorage.getBadgeById(badgeId);
+    console.log(`[BadgeController] updateBadgeProgress: Attempting to update progress for badge ${badgeId}, user ${userId} to ${progress}.`);
+    const result = badgeStorage.updateBadgeProgress(userId, badgeId, progress); // Assuming badgeStorage logs internally
+    const badge = badgeStorage.getBadgeById(badgeId); // Assuming badgeStorage logs internally
     
+    console.log(`[BadgeController] updateBadgeProgress: Progress updated for badge ${badgeId}, user ${userId}. Newly earned: ${result.newlyEarned}`);
     res.json({
       ...result.userBadge,
       badge,
       newlyEarned: result.newlyEarned
     });
   } catch (error: any) {
-    console.error('Error updating badge progress:', error);
+    console.error(`[BadgeController] updateBadgeProgress: Error updating progress for badge ${badgeId}, user ${userId}:`, error.message);
     res.status(500).json({ error: error.message || 'Failed to update badge progress' });
   }
 };
 
 // Check for mining badges
+// These are service-like functions, not direct route handlers, so logging focuses on their internal logic and calls.
 export const checkMiningBadges = async (userId: string, blockCount: number, consecutiveCount?: number) => {
   try {
     console.log(`Checking mining badges for user ${userId}, blocks: ${blockCount}, consecutive: ${consecutiveCount || 0}`);

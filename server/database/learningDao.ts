@@ -13,8 +13,8 @@ export class LearningDao {
    * @returns Created learning module
    */
   async createLearningModule(module: LearningModule): Promise<LearningModule> {
+    console.log(`[LearningDAO] createLearningModule called for module ID: ${module.id}, Title: ${module.title}`);
     try {
-      // Convert module to database format
       const dbModule = {
         id: module.id,
         title: module.title,
@@ -27,14 +27,12 @@ export class LearningDao {
         completionCriteria: module.completionCriteria
       };
 
-      // Insert module
       await db.insert(learningModules).values(dbModule);
-      
-      // Return original module
+      console.log(`[LearningDAO] Learning module ${module.id} - "${module.title}" created successfully.`);
       return module;
     } catch (error) {
-      console.error('Error creating learning module:', error);
-      throw new Error('Failed to create learning module');
+      console.error(`[LearningDAO] Error creating learning module ${module.id}:`, error.message);
+      throw new Error(`Failed to create learning module ${module.id}: ${error.message}`);
     }
   }
 
@@ -44,18 +42,19 @@ export class LearningDao {
    * @returns Learning module or undefined if not found
    */
   async getLearningModuleById(id: string): Promise<LearningModule | undefined> {
+    console.log(`[LearningDAO] getLearningModuleById called for ID: ${id}`);
     try {
-      const result = await db.select()
-        .from(learningModules)
-        .where(eq(learningModules.id, id))
-        .limit(1);
+      const result = await db.select().from(learningModules).where(eq(learningModules.id, id)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[LearningDAO] Learning module with ID ${id} not found.`);
         return undefined;
       }
       
-      // Convert database format to LearningModule
+      console.log(`[LearningDAO] Learning module with ID ${id} found: ${result[0].title}`);
       const dbModule = result[0];
+      const dbModule = result[0];
+      const questions = await this.getQuestionsByModuleId(dbModule.id); // This will also log
       return {
         id: dbModule.id,
         title: dbModule.title,
@@ -66,11 +65,11 @@ export class LearningDao {
         tokenReward: dbModule.tokenReward,
         badgeId: dbModule.badgeId ?? undefined,
         completionCriteria: dbModule.completionCriteria,
-        questions: await this.getQuestionsByModuleId(dbModule.id)
+        questions
       };
     } catch (error) {
-      console.error('Error getting learning module by ID:', error);
-      throw new Error('Failed to get learning module');
+      console.error(`[LearningDAO] Error getting learning module by ID ${id}:`, error.message);
+      throw new Error(`Failed to get learning module for ID ${id}: ${error.message}`);
     }
   }
 
@@ -79,13 +78,13 @@ export class LearningDao {
    * @returns Array of learning modules
    */
   async getAllLearningModules(): Promise<LearningModule[]> {
+    console.log(`[LearningDAO] getAllLearningModules called.`);
     try {
       const result = await db.select().from(learningModules);
-      
-      // Convert database format to LearningModule[]
+      console.log(`[LearningDAO] Found ${result.length} learning modules in DB.`);
       const modules: LearningModule[] = [];
       for (const dbModule of result) {
-        const questions = await this.getQuestionsByModuleId(dbModule.id);
+        const questions = await this.getQuestionsByModuleId(dbModule.id); // This will also log
         modules.push({
           id: dbModule.id,
           title: dbModule.title,
@@ -99,11 +98,11 @@ export class LearningDao {
           questions
         });
       }
-      
+      console.log(`[LearningDAO] Successfully fetched and processed ${modules.length} learning modules with their questions.`);
       return modules;
     } catch (error) {
-      console.error('Error getting all learning modules:', error);
-      throw new Error('Failed to get learning modules');
+      console.error(`[LearningDAO] Error getting all learning modules:`, error.message);
+      throw new Error(`Failed to get all learning modules: ${error.message}`);
     }
   }
 
@@ -113,8 +112,8 @@ export class LearningDao {
    * @returns Created learning question
    */
   async createLearningQuestion(question: LearningQuestion): Promise<LearningQuestion> {
+    console.log(`[LearningDAO] createLearningQuestion called for question ID: ${question.id}, Module ID: ${question.moduleId}`);
     try {
-      // Convert question to database format
       const dbQuestion = {
         id: question.id,
         moduleId: question.moduleId,
@@ -124,14 +123,12 @@ export class LearningDao {
         explanation: question.explanation
       };
 
-      // Insert question
       await db.insert(learningQuestions).values(dbQuestion);
-      
-      // Return original question
+      console.log(`[LearningDAO] Learning question ${question.id} for module ${question.moduleId} created successfully.`);
       return question;
     } catch (error) {
-      console.error('Error creating learning question:', error);
-      throw new Error('Failed to create learning question');
+      console.error(`[LearningDAO] Error creating learning question ${question.id}:`, error.message);
+      throw new Error(`Failed to create learning question ${question.id}: ${error.message}`);
     }
   }
 
@@ -141,12 +138,10 @@ export class LearningDao {
    * @returns Array of learning questions
    */
   async getQuestionsByModuleId(moduleId: string): Promise<LearningQuestion[]> {
+    console.log(`[LearningDAO] getQuestionsByModuleId called for Module ID: ${moduleId}`);
     try {
-      const result = await db.select()
-        .from(learningQuestions)
-        .where(eq(learningQuestions.moduleId, moduleId));
-      
-      // Convert database format to LearningQuestion[]
+      const result = await db.select().from(learningQuestions).where(eq(learningQuestions.moduleId, moduleId));
+      console.log(`[LearningDAO] Found ${result.length} questions for Module ID: ${moduleId}.`);
       return result.map(dbQuestion => ({
         id: dbQuestion.id,
         moduleId: dbQuestion.moduleId,
@@ -156,8 +151,8 @@ export class LearningDao {
         explanation: dbQuestion.explanation
       }));
     } catch (error) {
-      console.error('Error getting questions by module ID:', error);
-      throw new Error('Failed to get learning questions');
+      console.error(`[LearningDAO] Error getting questions for Module ID ${moduleId}:`, error.message);
+      throw new Error(`Failed to get learning questions for Module ID ${moduleId}: ${error.message}`);
     }
   }
 
@@ -167,11 +162,10 @@ export class LearningDao {
    * @returns Created or updated user learning progress
    */
   async createOrUpdateUserProgress(progress: UserLearningProgress): Promise<UserLearningProgress> {
+    console.log(`[LearningDAO] createOrUpdateUserProgress called for UserID: ${progress.userId}, ModuleID: ${progress.moduleId}`);
     try {
-      // Check if progress exists
-      const existingProgress = await this.getUserProgressByModuleId(progress.userId, progress.moduleId);
+      const existingProgress = await this.getUserProgressByModuleId(progress.userId, progress.moduleId); // Already logs
       
-      // Convert progress to database format
       const dbProgress = {
         userId: progress.userId,
         moduleId: progress.moduleId,
@@ -183,25 +177,20 @@ export class LearningDao {
       };
 
       if (!existingProgress) {
-        // Insert progress
+        console.log(`[LearningDAO] No existing progress for UserID: ${progress.userId}, ModuleID: ${progress.moduleId}. Creating...`);
         await db.insert(userLearningProgress).values(dbProgress);
+        console.log(`[LearningDAO] User progress for UserID: ${progress.userId}, ModuleID: ${progress.moduleId} created successfully.`);
       } else {
-        // Update progress
-        await db.update(userLearningProgress)
-          .set(dbProgress)
-          .where(
-            and(
-              eq(userLearningProgress.userId, progress.userId),
-              eq(userLearningProgress.moduleId, progress.moduleId)
-            )
-          );
+        console.log(`[LearningDAO] Existing progress found for UserID: ${progress.userId}, ModuleID: ${progress.moduleId}. Updating...`);
+        await db.update(userLearningProgress).set(dbProgress)
+          .where(and(eq(userLearningProgress.userId, progress.userId), eq(userLearningProgress.moduleId, progress.moduleId)));
+        console.log(`[LearningDAO] User progress for UserID: ${progress.userId}, ModuleID: ${progress.moduleId} updated successfully.`);
       }
       
-      // Return progress
       return progress;
     } catch (error) {
-      console.error('Error creating or updating user learning progress:', error);
-      throw new Error('Failed to create or update user learning progress');
+      console.error(`[LearningDAO] Error creating/updating user progress for UserID: ${progress.userId}, ModuleID: ${progress.moduleId}:`, error.message);
+      throw new Error(`Failed to create/update user progress for UserID: ${progress.userId}, ModuleID: ${progress.moduleId}: ${error.message}`);
     }
   }
 
@@ -212,22 +201,19 @@ export class LearningDao {
    * @returns User learning progress or undefined if not found
    */
   async getUserProgressByModuleId(userId: string, moduleId: string): Promise<UserLearningProgress | undefined> {
+    console.log(`[LearningDAO] getUserProgressByModuleId called for UserID: ${userId}, ModuleID: ${moduleId}`);
     try {
-      const result = await db.select()
-        .from(userLearningProgress)
-        .where(
-          and(
-            eq(userLearningProgress.userId, userId),
-            eq(userLearningProgress.moduleId, moduleId)
-          )
-        )
+      const result = await db.select().from(userLearningProgress)
+        .where(and(eq(userLearningProgress.userId, userId), eq(userLearningProgress.moduleId, moduleId)))
         .limit(1);
       
       if (result.length === 0) {
+        console.log(`[LearningDAO] User progress not found for UserID: ${userId}, ModuleID: ${moduleId}.`);
         return undefined;
       }
       
-      // Convert database format to UserLearningProgress
+      console.log(`[LearningDAO] User progress found for UserID: ${userId}, ModuleID: ${moduleId}.`);
+      const dbProgress = result[0];
       const dbProgress = result[0];
       return {
         userId: dbProgress.userId,
@@ -239,8 +225,8 @@ export class LearningDao {
         rewardsClaimed: dbProgress.rewardsClaimed
       };
     } catch (error) {
-      console.error('Error getting user progress by module ID:', error);
-      throw new Error('Failed to get user learning progress');
+      console.error(`[LearningDAO] Error getting user progress for UserID: ${userId}, ModuleID: ${moduleId}:`, error.message);
+      throw new Error(`Failed to get user progress for UserID: ${userId}, ModuleID: ${moduleId}: ${error.message}`);
     }
   }
 
@@ -250,12 +236,10 @@ export class LearningDao {
    * @returns Array of user learning progress
    */
   async getAllUserProgress(userId: string): Promise<UserLearningProgress[]> {
+    console.log(`[LearningDAO] getAllUserProgress called for UserID: ${userId}`);
     try {
-      const result = await db.select()
-        .from(userLearningProgress)
-        .where(eq(userLearningProgress.userId, userId));
-      
-      // Convert database format to UserLearningProgress[]
+      const result = await db.select().from(userLearningProgress).where(eq(userLearningProgress.userId, userId));
+      console.log(`[LearningDAO] Found ${result.length} progress entries for UserID: ${userId}.`);
       return result.map(dbProgress => ({
         userId: dbProgress.userId,
         moduleId: dbProgress.moduleId,
@@ -266,8 +250,8 @@ export class LearningDao {
         rewardsClaimed: dbProgress.rewardsClaimed
       }));
     } catch (error) {
-      console.error('Error getting all user progress:', error);
-      throw new Error('Failed to get user learning progress');
+      console.error(`[LearningDAO] Error getting all user progress for UserID: ${userId}:`, error.message);
+      throw new Error(`Failed to get all user progress for UserID: ${userId}: ${error.message}`);
     }
   }
 
@@ -277,17 +261,11 @@ export class LearningDao {
    * @returns Array of user learning progress for completed modules
    */
   async getCompletedModules(userId: string): Promise<UserLearningProgress[]> {
+    console.log(`[LearningDAO] getCompletedModules called for UserID: ${userId}`);
     try {
-      const result = await db.select()
-        .from(userLearningProgress)
-        .where(
-          and(
-            eq(userLearningProgress.userId, userId),
-            eq(userLearningProgress.completed, true)
-          )
-        );
-      
-      // Convert database format to UserLearningProgress[]
+      const result = await db.select().from(userLearningProgress)
+        .where(and(eq(userLearningProgress.userId, userId), eq(userLearningProgress.completed, true)));
+      console.log(`[LearningDAO] Found ${result.length} completed modules for UserID: ${userId}.`);
       return result.map(dbProgress => ({
         userId: dbProgress.userId,
         moduleId: dbProgress.moduleId,
@@ -298,8 +276,8 @@ export class LearningDao {
         rewardsClaimed: dbProgress.rewardsClaimed
       }));
     } catch (error) {
-      console.error('Error getting completed modules:', error);
-      throw new Error('Failed to get completed modules');
+      console.error(`[LearningDAO] Error getting completed modules for UserID: ${userId}:`, error.message);
+      throw new Error(`Failed to get completed modules for UserID: ${userId}: ${error.message}`);
     }
   }
 
@@ -310,21 +288,29 @@ export class LearningDao {
    * @returns Updated user learning progress
    */
   async markRewardsAsClaimed(userId: string, moduleId: string): Promise<UserLearningProgress | undefined> {
+    console.log(`[LearningDAO] markRewardsAsClaimed called for UserID: ${userId}, ModuleID: ${moduleId}`);
     try {
-      // Get existing progress
-      const progress = await this.getUserProgressByModuleId(userId, moduleId);
-      if (!progress || !progress.completed) {
+      const progress = await this.getUserProgressByModuleId(userId, moduleId); // Already logs
+      if (!progress) {
+        console.log(`[LearningDAO] No progress found for UserID: ${userId}, ModuleID: ${moduleId}. Cannot mark rewards as claimed.`);
         return undefined;
       }
+      if (!progress.completed) {
+        console.log(`[LearningDAO] Module ${moduleId} not completed by UserID: ${userId}. Cannot mark rewards as claimed.`);
+        return undefined;
+      }
+      if (progress.rewardsClaimed) {
+        console.log(`[LearningDAO] Rewards for module ${moduleId} already claimed by UserID: ${userId}.`);
+        // Optionally return current progress or throw specific "already claimed" error
+        return progress;
+      }
       
-      // Update rewards claimed flag
       progress.rewardsClaimed = true;
-      
-      // Save progress
-      return await this.createOrUpdateUserProgress(progress);
+      console.log(`[LearningDAO] Marking rewards as claimed for UserID: ${userId}, ModuleID: ${moduleId}.`);
+      return await this.createOrUpdateUserProgress(progress); // Already logs
     } catch (error) {
-      console.error('Error marking rewards as claimed:', error);
-      throw new Error('Failed to mark rewards as claimed');
+      console.error(`[LearningDAO] Error marking rewards as claimed for UserID: ${userId}, ModuleID: ${moduleId}:`, error.message);
+      throw new Error(`Failed to mark rewards as claimed for UserID: ${userId}, ModuleID: ${moduleId}: ${error.message}`);
     }
   }
 

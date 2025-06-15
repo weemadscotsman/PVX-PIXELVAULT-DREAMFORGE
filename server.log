@@ -1,0 +1,123 @@
+
+> rest-express@1.0.0 dev
+> NODE_ENV=development NODE_OPTIONS="-r dotenv/config" tsx server/index.ts
+
+Blockchain data loaded from file
+Thringlet data loaded from file
+[BadgeService] Initializing...
+[BadgeService] Loaded 19 badges from /app/data/badges.json
+[BadgeService] Loaded 0 user badge entries from /app/data/user_badges.json
+[BadgeService] Initialization complete.
+[DOTENV] Attempting to load .env file from: /app/.env
+[DOTENV] .env file loaded successfully.
+[DOTENV] Parsed variables: [ 'DATABASE_URL', 'JWT_SECRET', 'PORT' ]
+[BACKEND LIFECYCLE] Stage 1: .env loaded.
+[BACKEND LIFECYCLE] process.env.DATABASE_URL after dotenv: postgresql://testuser:testpass@localhost:5432/pixelvault
+[BACKEND LIFECYCLE] process.env.PORT after dotenv: 5000
+[BACKEND LIFECYCLE] process.env.JWT_SECRET after dotenv: SET
+[BACKEND LIFECYCLE] Stage 2: App initialized. Attempting to use PORT: 5000
+[BACKEND LIFECYCLE] Stage 3: Core middleware (trust proxy, cors, json, urlencoded) added.
+[BACKEND LIFECYCLE] Stage 4: /api/ping route added.
+[BACKEND LIFECYCLE] Stage 9: Calling startServer function...
+[BACKEND LIFECYCLE] Stage 5: Starting server initialization process...
+[BACKEND LIFECYCLE] Stage 5a: Checking database connection...
+Database connection check failed: ErrorEvent {
+  [Symbol(kTarget)]: WebSocket {
+    _events: [Object: null prototype] {
+      error: [Function],
+      message: [Function],
+      close: [Function],
+      open: [Function]
+    },
+    _eventsCount: 4,
+    _maxListeners: undefined,
+    _binaryType: 'arraybuffer',
+    _closeCode: 1006,
+    _closeFrameReceived: false,
+    _closeFrameSent: false,
+    _closeMessage: <Buffer >,
+    _closeTimer: null,
+    _errorEmitted: true,
+    _extensions: {},
+    _paused: false,
+    _protocol: '',
+    _readyState: 3,
+    _receiver: null,
+    _sender: null,
+    _socket: null,
+    _bufferedAmount: 0,
+    _isServer: false,
+    _redirects: 0,
+    _autoPong: true,
+    _url: 'wss://localhost/v2',
+    _req: null,
+    [Symbol(kCapture)]: false
+  },
+  [Symbol(kType)]: 'error',
+  [Symbol(kError)]: Error: connect ECONNREFUSED 127.0.0.1:443
+      at __node_internal_captureLargerStackTrace (node:internal/errors:496:5)
+      at __node_internal_exceptionWithHostPort (node:internal/errors:671:12)
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1549:16) {
+    errno: -111,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 443
+  },
+  [Symbol(kMessage)]: 'connect ECONNREFUSED 127.0.0.1:443'
+}
+[BACKEND WARNING] Database connection failed - falling back to in-memory storage
+[BACKEND LIFECYCLE] Stage 6: Initializing PVX blockchain...
+[BlockchainService] initializeBlockchain called.
+[BlockchainService] connectToBlockchain called.
+[BlockchainService] Existing latest block found. Height: 2251, Hash: 50eca59949...
+[BlockchainService] Blockchain connected. Status: Connected=true, Synced=true, Latest Block Height: 2251
+[BlockchainService] Attempting to load staking pools from database...
+[StakeDAO] getStakingPools called.
+[StakeDAO] Error getting staking pools: connect ECONNREFUSED 127.0.0.1:5432
+[BlockchainService] CRITICAL: Error loading staking pools from database: Failed to get staking pools: connect ECONNREFUSED 127.0.0.1:5432 - Staking might not function correctly.
+[BlockchainService] startBlockchainProcesses called.
+[BlockchainService] Block mining process scheduled every 10s.
+[BlockchainService] Staking rewards distribution process scheduled every 6 hours.
+[BlockchainService] Blockchain initialization completed and core processes started.
+[BACKEND LIFECYCLE] Stage 6a: Connected to PVX blockchain successfully
+[BACKEND LIFECYCLE] Stage 7: Mounting feature API routes...
+[BACKEND LIFECYCLE] Stage 7a: Feature routes mounted successfully.
+[BACKEND LIFECYCLE] Stage 7b: Error handling middleware added.
+[BACKEND LIFECYCLE] Stage 7c: API 404 handling middleware added.
+[BACKEND LIFECYCLE] Stage 8: Setting up Vite for development...
+[BACKEND LIFECYCLE] Stage 8a: Attempting to start server on port 5000...
+[BACKEND LIFECYCLE] Stage 8b: Server.listen() called.
+✅ [BACKEND ONLINE] Server successfully listening on port 5000
+   Test Ping: http://localhost:5000/api/ping
+   Wallet Create (POST): http://localhost:5000/api/wallet/create
+[BlockchainService] Mining interval: Attempting to mine new block...
+[BACKEND REQUEST] GET /api/ping
+Error occurred: SyntaxError: Unexpected token p in JSON at position 1
+    at JSON.parse (<anonymous>)
+    at parse (/app/node_modules/body-parser/lib/types/json.js:92:19)
+    at /app/node_modules/body-parser/lib/read.js:128:18
+    at AsyncResource.runInAsyncScope (node:async_hooks:203:9)
+    at invokeCallback (/app/node_modules/raw-body/index.js:238:16)
+    at done (/app/node_modules/raw-body/index.js:227:7)
+    at IncomingMessage.onEnd (/app/node_modules/raw-body/index.js:287:7)
+    at IncomingMessage.emit (node:events:517:28)
+    at endReadableNT (node:internal/streams/readable:1400:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+  expose: true,
+  statusCode: 400,
+  status: 400,
+  body: '{passphrase:testwalletpass}',
+  type: 'entity.parse.failed'
+}
+[WalletController] Received request for getWallet with address: PVX_NONEXISTENTWALLET123
+[WalletController] Attempting to fetch wallet PVX_NONEXISTENTWALLET123 from walletDao...
+[WalletDAO] getWalletByAddress called for address: PVX_NONEXISTENTWALLET123
+[WalletDAO] Executing SELECT query for wallet: PVX_NONEXISTENTWALLET123
+[WalletDAO] Error in getWalletByAddress for PVX_NONEXISTENTWALLET123: connect ECONNREFUSED 127.0.0.1:443
+[WalletController] Error fetching wallet PVX_NONEXISTENTWALLET123 from walletDao: connect ECONNREFUSED 127.0.0.1:443. Will try memBlockchainStorage.
+[WalletController] Attempting to fetch wallet PVX_NONEXISTENTWALLET123 from memBlockchainStorage...
+[WalletController] Wallet PVX_NONEXISTENTWALLET123 not found in any storage. Returning 404.
+[StakeController] getStakingPools: Request received GET /api/stake/pools
+[StakeController] getStakingPools: Found 4 staking pools in memBlockchainStorage.
+[StakeController] getStakingPools: Sending 200 OK response with 4 pools.

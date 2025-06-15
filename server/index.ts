@@ -8,9 +8,27 @@ import { setupVite, serveStatic } from "./vite";
 import { dbInit } from "./database/dbInit";
 import { closeDatabase, checkDatabaseConnection } from "./database";
 
+import path from 'path'; // Import path module
+
 // --- Load .env variables ---
-dotenv.config();
-console.log("[BACKEND LIFECYCLE] Stage 1: .env loaded. Raw process.env.PORT:", process.env.PORT);
+const envPath = path.resolve(process.cwd(), '.env');
+console.log(`[DOTENV] Attempting to load .env file from: ${envPath}`);
+const dotenvResult = dotenv.config({ path: envPath });
+
+if (dotenvResult.error) {
+  console.error('[DOTENV] Error loading .env file:', dotenvResult.error);
+} else {
+  console.log('[DOTENV] .env file loaded successfully.');
+  if (dotenvResult.parsed) {
+    console.log('[DOTENV] Parsed variables:', Object.keys(dotenvResult.parsed));
+  }
+}
+
+console.log("[BACKEND LIFECYCLE] Stage 1: .env loaded.");
+console.log("[BACKEND LIFECYCLE] process.env.DATABASE_URL after dotenv:", process.env.DATABASE_URL);
+console.log("[BACKEND LIFECYCLE] process.env.PORT after dotenv:", process.env.PORT);
+console.log("[BACKEND LIFECYCLE] process.env.JWT_SECRET after dotenv:", process.env.JWT_SECRET ? "SET" : "NOT SET");
+
 
 // --- App Initialization ---
 const app = express();
@@ -99,11 +117,33 @@ async function startServer() {
       }
       
       // Start the server
+      console.log(`[BACKEND LIFECYCLE] Stage 8a: Attempting to start server on port ${PORT}...`);
+      server.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.syscall !== 'listen') {
+          throw error;
+        }
+        // Handle specific listen errors with friendly messages
+        switch (error.code) {
+          case 'EACCES':
+            console.error(`❌ [BACKEND CRITICAL ERROR] Port ${PORT} requires elevated privileges.`);
+            process.exit(1);
+            break;
+          case 'EADDRINUSE':
+            console.error(`❌ [BACKEND CRITICAL ERROR] Port ${PORT} is already in use.`);
+            process.exit(1);
+            break;
+          default:
+            console.error(`❌ [BACKEND CRITICAL ERROR] Server listen error:`, error);
+            throw error;
+        }
+      });
+
       server.listen(PORT, () => {
         console.log(`✅ [BACKEND ONLINE] Server successfully listening on port ${PORT}`);
         console.log(`   Test Ping: http://localhost:${PORT}/api/ping`);
         console.log(`   Wallet Create (POST): http://localhost:${PORT}/api/wallet/create`);
       });
+      console.log("[BACKEND LIFECYCLE] Stage 8b: Server.listen() called.");
       
       // Setup graceful shutdown
       process.on('SIGINT', async () => {
@@ -127,4 +167,7 @@ async function startServer() {
 
 // Start the server
 console.log("[BACKEND LIFECYCLE] Stage 9: Calling startServer function...");
-startServer();
+startServer().catch(error => {
+  console.error("❌ [BACKEND CRITICAL ERROR] Unhandled exception during server startup:", error);
+  process.exit(1);
+});

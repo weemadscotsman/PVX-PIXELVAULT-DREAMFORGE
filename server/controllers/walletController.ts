@@ -103,10 +103,37 @@ export const createWallet = async (req: Request, res: Response) => {
       .update(address)
       .digest('hex');
     
-    // Check if wallet already exists in database
-    const existingWallet = await walletDao.getWalletByAddress(address);
-    if (existingWallet) {
-      return res.status(400).json({ error: 'Wallet with this address already exists' });
+    // Check if wallet already exists
+    let dbCheckError = false;
+    let existingWalletInDb = null;
+    try {
+      console.log(`[WalletController] CreateWallet: Checking if wallet ${address} exists in walletDao...`);
+      existingWalletInDb = await walletDao.getWalletByAddress(address);
+      if (existingWalletInDb) {
+        console.log(`[WalletController] CreateWallet: Wallet ${address} found in walletDao. Cannot create.`);
+        return res.status(400).json({ error: 'Wallet with this address already exists in DB.' });
+      }
+      console.log(`[WalletController] CreateWallet: Wallet ${address} not found in walletDao. Good to proceed.`);
+    } catch (error) {
+      dbCheckError = true;
+      console.warn(`[WalletController] CreateWallet: Error checking wallet ${address} in walletDao: ${error.message}. Will check memBlockchainStorage.`);
+    }
+
+    // If DB check failed OR wallet not found in DB, check memory
+    if (dbCheckError || !existingWalletInDb) {
+      console.log(`[WalletController] CreateWallet: Checking if wallet ${address} exists in memBlockchainStorage...`);
+      const existingWalletInMemory = await memBlockchainStorage.getWalletByAddress(address);
+      if (existingWalletInMemory) {
+        // If DB check failed but found in memory, it's ambiguous.
+        // For safety, if DB check failed, assume it might exist if in memory.
+        // If DB check succeeded and it wasn't in DB, but it is in memory, this is a conflict.
+        const errorMessage = dbCheckError
+          ? `Wallet ${address} found in memory, DB check failed. Creation halted for safety.`
+          : `Wallet ${address} found in memory, but not in DB. This indicates a sync issue. Creation halted.`;
+        console.warn(`[WalletController] CreateWallet: ${errorMessage}`);
+        return res.status(409).json({ error: errorMessage }); // 409 Conflict
+      }
+      console.log(`[WalletController] CreateWallet: Wallet ${address} not found in memBlockchainStorage. Good to proceed with creation.`);
     }
     
     // Wallet data to insert
@@ -120,21 +147,30 @@ export const createWallet = async (req: Request, res: Response) => {
       passphraseHash: hash
     };
     
-    // Create wallet in database
-    console.log('Creating wallet with data:', {
-      address: walletData.address,
-      publicKey: walletData.publicKey,
-      balance: walletData.balance,
-      passphraseSalt: walletData.passphraseSalt,
-      passphraseHash: walletData.passphraseHash ? 'exists' : 'missing',
-    });
+    // Create wallet in database (with try-catch)
+    let walletSavedToDb = false;
+    try {
+      console.log(`[WalletController] CreateWallet: Attempting to save wallet ${address} to walletDao...`, {
+        address: walletData.address,
+        publicKey: walletData.publicKey,
+        balance: walletData.balance,
+        passphraseSalt: walletData.passphraseSalt ? 'exists' : 'missing',
+        passphraseHash: walletData.passphraseHash ? 'exists' : 'missing',
+      });
+      await walletDao.createWallet(walletData);
+      walletSavedToDb = true;
+      console.log(`[WalletController] CreateWallet: Wallet ${address} saved to walletDao successfully.`);
+    } catch (dbError) {
+      console.warn(`[WalletController] CreateWallet: Error saving wallet ${address} to walletDao: ${dbError.message}. Wallet will only be in memory.`);
+      // walletSavedToDb remains false
+    }
     
-    const wallet = await walletDao.createWallet(walletData);
-    
-    // Also create in memory storage for backup
+    // Always create in memory storage, especially if DB save failed
+    console.log(`[WalletController] CreateWallet: Saving wallet ${address} to memBlockchainStorage...`);
     await memBlockchainStorage.createWallet(walletData);
+    console.log(`[WalletController] CreateWallet: Wallet ${address} saved to memBlockchainStorage.`);
     
-    console.log('Created new wallet:', address);
+    console.log(`[WalletController] Created new wallet: ${address}. DB save status: ${walletSavedToDb}`);
     
     res.status(201).json({
       address,
@@ -214,22 +250,41 @@ export const importWallet = async (req: Request, res: Response) => {
  * GET /api/wallet/:address
  */
 export const getWallet = async (req: Request, res: Response) => {
+  const { address } = req.params;
+  console.log(`[WalletController] Received request for getWallet with address: ${address}`);
+
   try {
-    const { address } = req.params;
-    
+    let wallet;
     // Try to get the wallet from DB first
-    let wallet = await walletDao.getWalletByAddress(address);
+    console.log(`[WalletController] Attempting to fetch wallet ${address} from walletDao...`);
+    try {
+      wallet = await walletDao.getWalletByAddress(address);
+      if (wallet) {
+        console.log(`[WalletController] Wallet ${address} found in walletDao.`);
+      } else {
+        console.log(`[WalletController] Wallet ${address} not found in walletDao.`);
+      }
+    } catch (dbError) {
+      console.warn(`[WalletController] Error fetching wallet ${address} from walletDao: ${dbError.message}. Will try memBlockchainStorage.`);
+      // Do not set wallet here, let it proceed to memBlockchainStorage
+    }
     
-    // If not found in DB, try memory storage
+    // If not found in DB (or DB call failed), try memory storage
     if (!wallet) {
+      console.log(`[WalletController] Attempting to fetch wallet ${address} from memBlockchainStorage...`);
       wallet = await memBlockchainStorage.getWalletByAddress(address);
+      if (wallet) {
+        console.log(`[WalletController] Wallet ${address} found in memBlockchainStorage.`);
+      }
     }
     
     // If still not found, return 404
     if (!wallet) {
+      console.log(`[WalletController] Wallet ${address} not found in any storage. Returning 404.`);
       return res.status(404).json({ error: 'Wallet not found' });
     }
     
+    console.log(`[WalletController] Successfully retrieved wallet ${address}. Sending response.`);
     res.json({
       address: wallet.address,
       publicKey: wallet.publicKey,
@@ -238,7 +293,7 @@ export const getWallet = async (req: Request, res: Response) => {
       lastUpdated: wallet.lastUpdated
     });
   } catch (error) {
-    console.error('Error getting wallet:', error);
+    console.error(`[WalletController] Error getting wallet ${address}:`, error);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to get wallet'
     });

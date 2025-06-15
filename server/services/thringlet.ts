@@ -41,19 +41,21 @@ class ThringletService {
     emotionalState: EmotionalState, 
     ability?: { name: string, description: string } 
   }> {
+    console.log(`[ThringletService] processInteraction called for ThringletID: ${thringletId}, Owner: ${ownerAddress}, Interaction: ${interactionType}`);
     
-    // Get the current thringlet from storage
     const thringlet = await storage.getThringlet(thringletId);
     
     if (!thringlet) {
+      console.error(`[ThringletService] Thringlet ${thringletId} not found during interaction.`);
       throw new Error('Thringlet not found');
     }
     
     if (thringlet.ownerAddress !== ownerAddress) {
+      console.error(`[ThringletService] Owner mismatch for Thringlet ${thringletId}. Expected: ${thringlet.ownerAddress}, Got: ${ownerAddress}`);
       throw new Error('You are not the owner of this thringlet');
     }
     
-    // Get current emotional state
+    console.log(`[ThringletService] Thringlet ${thringletId} found. Current state:`, thringlet.emotionalState);
     const currentEmotionalState = thringlet.emotionalState;
     
     // Calculate emotional changes based on interaction type and thringlet attributes
@@ -63,34 +65,22 @@ class ThringletService {
       interactionType
     );
     
-    // Check if a new ability should be unlocked
     let newAbility: { name: string, description: string } | undefined;
     
     if (this.shouldUnlockAbility(thringlet, newEmotionalState)) {
       newAbility = this.generateAbility(thringlet, newEmotionalState);
-      
-      // Add the new ability to the thringlet
+      console.log(`[ThringletService] Thringlet ${thringletId} unlocked new ability: ${newAbility.name}`);
       const updatedAbilities = [...thringlet.abilities, newAbility.name];
       
-      // Update thringlet with new ability
-      await storage.updateThringlet({
-        ...thringlet,
-        emotionalState: newEmotionalState,
-        abilities: updatedAbilities
-      });
+      await storage.updateThringlet({ ...thringlet, emotionalState: newEmotionalState, abilities: updatedAbilities });
+      console.log(`[ThringletService] Thringlet ${thringletId} updated with new emotional state and ability.`);
     } else {
-      // Just update the emotional state
-      await storage.updateThringlet({
-        ...thringlet,
-        emotionalState: newEmotionalState
-      });
+      await storage.updateThringlet({ ...thringlet, emotionalState: newEmotionalState });
+      console.log(`[ThringletService] Thringlet ${thringletId} updated with new emotional state.`);
     }
     
-    // Return the updated emotional state and possibly a new ability
-    return {
-      emotionalState: newEmotionalState,
-      ability: newAbility
-    };
+    console.log(`[ThringletService] Interaction processed for ${thringletId}. New state:`, newEmotionalState, newAbility ? `New ability: ${newAbility.name}` : '');
+    return { emotionalState: newEmotionalState, ability: newAbility };
   }
   
   // Calculate the new emotional state based on interaction and attributes
@@ -99,16 +89,9 @@ class ThringletService {
     attributes: ThringletAttributes,
     interactionType: InteractionType
   ): EmotionalState {
-    // Deep copy the current state
-    const newState: EmotionalState = {
-      joy: currentState.joy,
-      fear: currentState.fear,
-      trust: currentState.trust,
-      surprise: currentState.surprise,
-      dominant: currentState.dominant
-    };
+    console.log(`[ThringletService] calculateEmotionalResponse for interaction: ${interactionType}, current state:`, currentState, "attributes:", attributes);
+    const newState: EmotionalState = JSON.parse(JSON.stringify(currentState)); // Deep copy
     
-    // Apply modifiers based on interaction type
     switch (interactionType) {
       case 'stimulate':
         // Stimulation increases joy and surprise, but may increase fear based on resilience
@@ -166,20 +149,20 @@ class ThringletService {
     
     // Set the dominant emotion
     newState.dominant = emotions[0].name;
-    
+    console.log(`[ThringletService] Calculated new emotional state:`, newState);
     return newState;
   }
   
   // Determine if a new ability should be unlocked
   private shouldUnlockAbility(thringlet: Thringlet, newEmotionalState: EmotionalState): boolean {
-    // Check if thringlet has reached a level where it can have more abilities
-    const maxAbilities = Math.min(10, thringlet.level * 2);
-    
+    const maxAbilities = Math.min(10, thringlet.level * 2); // Example: Max 10 abilities, 2 per level
+    console.log(`[ThringletService] shouldUnlockAbility check for Thringlet ${thringlet.id}. Current abilities: ${thringlet.abilities.length}, Max allowed: ${maxAbilities}`);
+
     if (thringlet.abilities.length >= maxAbilities) {
+      console.log(`[ThringletService] Thringlet ${thringlet.id} already has max abilities for its level.`);
       return false;
     }
     
-    // Check if any emotion has reached a threshold value
     const thresholds = [70, 80, 90, 95]; // Thresholds at which abilities unlock
     
     for (const threshold of thresholds) {
@@ -189,21 +172,20 @@ class ThringletService {
          newEmotionalState.trust >= threshold ||
          newEmotionalState.surprise >= threshold) &&
         // Make sure we don't trigger too often
-        Math.random() < 0.3 // 30% chance when conditions are met
+        Math.random() < 0.3 // 30% chance when conditions are met (configurable)
       ) {
+        console.log(`[ThringletService] Thringlet ${thringlet.id} met threshold for new ability. Threshold: ${threshold}, Emotion values:`, newEmotionalState);
         return true;
       }
     }
-    
+    console.log(`[ThringletService] Thringlet ${thringlet.id} did not meet conditions for unlocking a new ability.`);
     return false;
   }
   
   // Generate a new ability based on thringlet's state
   private generateAbility(thringlet: Thringlet, emotionalState: EmotionalState): { name: string, description: string } {
-    // Determine which emotion to base the ability on
     const dominantEmotion = emotionalState.dominant;
-    
-    // Ability pools based on dominant emotion
+    console.log(`[ThringletService] generateAbility for Thringlet ${thringlet.id} based on dominant emotion: ${dominantEmotion}`);
     const abilityPools = {
       joy: [
         { name: 'Energize', description: 'Boosts transaction speed by 15% for 24 hours' },
@@ -232,23 +214,31 @@ class ThringletService {
     
     // Select a random ability from the pool
     const randomIndex = Math.floor(Math.random() * pool.length);
-    return pool[randomIndex];
+    const newAbility = pool[randomIndex];
+    console.log(`[ThringletService] Generated new ability for Thringlet ${thringlet.id}: ${newAbility.name} - "${newAbility.description}"`);
+    return newAbility;
   }
   
   // Bond a thringlet to an owner
   async bondThringlet(thringletId: string, ownerAddress: string): Promise<Thringlet> {
+    console.log(`[ThringletService] bondThringlet called for ThringletID: ${thringletId} to Owner: ${ownerAddress}`);
     const thringlet = await storage.getThringlet(thringletId);
     
     if (!thringlet) {
+      console.error(`[ThringletService] Thringlet ${thringletId} not found for bonding.`);
       throw new Error('Thringlet not found');
     }
     
-    // Check if already bonded to someone else
     if (thringlet.ownerAddress && thringlet.ownerAddress !== ownerAddress) {
+      console.error(`[ThringletService] Thringlet ${thringletId} is already bonded to another address: ${thringlet.ownerAddress}.`);
       throw new Error('This thringlet is already bonded to another address');
     }
+    if (thringlet.ownerAddress === ownerAddress) {
+       console.log(`[ThringletService] Thringlet ${thringletId} is already bonded to this owner: ${ownerAddress}. No action needed or re-bonding logic here.`);
+       // Potentially return thringlet directly or re-apply bonding date if that's the logic
+    }
     
-    // Set the owner and bonding date
+    console.log(`[ThringletService] Bonding Thringlet ${thringletId} to ${ownerAddress}.`);
     const updatedThringlet = {
       ...thringlet,
       ownerAddress,
@@ -264,20 +254,22 @@ class ThringletService {
     };
     
     // Save the updated thringlet
-    return await storage.updateThringlet(updatedThringlet);
+    const bondedThringlet = await storage.updateThringlet(updatedThringlet);
+    console.log(`[ThringletService] Thringlet ${thringletId} successfully bonded to ${ownerAddress}.`);
+    return bondedThringlet;
   }
   
   // Create a random thringlet
   createRandomThringlet(name: string = ''): Omit<Thringlet, 'id'> {
-    // Generate random attributes
+    console.log(`[ThringletService] createRandomThringlet called. Requested name: "${name}"`);
     const attributes: ThringletAttributes = {
-      intellect: Math.floor(Math.random() * 51) + 25, // 25-75
-      resilience: Math.floor(Math.random() * 51) + 25, // 25-75
-      empathy: Math.floor(Math.random() * 51) + 25, // 25-75
-      chaos: Math.floor(Math.random() * 51) + 25 // 25-75
+      intellect: Math.floor(Math.random() * 51) + 25,
+      resilience: Math.floor(Math.random() * 51) + 25,
+      empathy: Math.floor(Math.random() * 51) + 25,
+      chaos: Math.floor(Math.random() * 51) + 25
     };
+    console.log(`[ThringletService] Generated attributes:`, attributes);
     
-    // Determine thringlet type based on highest attribute
     let type = 'Balanced';
     let highestAttr = 0;
     
@@ -295,9 +287,9 @@ class ThringletService {
     }
     
     // Generate a name if not provided
-    const generatedName = name || this.generateThringletName(type);
+    const generatedName = name || this.generateThringletName(type); // generateThringletName also logs
+    console.log(`[ThringletService] Determined Thringlet type: ${type}, Generated name: "${generatedName}"`);
     
-    // Create basic emotional state
     const emotionalState: EmotionalState = {
       joy: Math.floor(Math.random() * 31) + 40, // 40-70
       fear: Math.floor(Math.random() * 21) + 10, // 10-30
@@ -308,19 +300,15 @@ class ThringletService {
     
     // Calculate dominant emotion
     const emotions = [
-      { name: 'joy', value: emotionalState.joy },
-      { name: 'fear', value: emotionalState.fear },
-      { name: 'trust', value: emotionalState.trust },
-      { name: 'surprise', value: emotionalState.surprise }
+      { name: 'joy', value: emotionalState.joy }, { name: 'fear', value: emotionalState.fear },
+      { name: 'trust', value: emotionalState.trust }, { name: 'surprise', value: emotionalState.surprise }
     ];
-    
     emotions.sort((a, b) => b.value - a.value);
     emotionalState.dominant = emotions[0].name;
-    
-    // Create the thringlet object
-    return {
-      name: generatedName,
-      type,
+    console.log(`[ThringletService] Initial emotional state:`, emotionalState);
+
+    const thringletData = {
+      name: generatedName, type,
       level: 1,
       attributes,
       abilities: [],

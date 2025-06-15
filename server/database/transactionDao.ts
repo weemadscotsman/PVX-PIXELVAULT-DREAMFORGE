@@ -13,8 +13,8 @@ export class TransactionDao {
    * @returns Created transaction
    */
   async createTransaction(transaction: Transaction): Promise<Transaction> {
+    console.log(`[TransactionDAO] createTransaction called for hash: ${transaction.hash}, type: ${transaction.type}`);
     try {
-      // Convert transaction to database format with camelCase field names to match DB schema
       const dbTransaction = {
         hash: transaction.hash,
         type: transaction.type,
@@ -30,14 +30,12 @@ export class TransactionDao {
         metadata: transaction.metadata ? transaction.metadata : null,
       };
 
-      // Insert transaction
       await db.insert(transactions).values(dbTransaction);
-      
-      // Return original transaction
+      console.log(`[TransactionDAO] Transaction ${transaction.hash} created successfully.`);
       return transaction;
     } catch (error) {
-      console.error('Error creating transaction:', error);
-      throw new Error('Failed to create transaction');
+      console.error(`[TransactionDAO] Error creating transaction ${transaction.hash}:`, error.message);
+      throw new Error(`Failed to create transaction ${transaction.hash}: ${error.message}`);
     }
   }
 
@@ -47,18 +45,18 @@ export class TransactionDao {
    * @returns Transaction or null if not found
    */
   async getTransactionByHash(hash: string): Promise<Transaction | null> {
+    console.log(`[TransactionDAO] getTransactionByHash called for hash: ${hash}`);
     try {
-      const result = await db.select()
-        .from(transactions)
-        .where(eq(transactions.hash, hash))
-        .limit(1);
+      const result = await db.select().from(transactions).where(eq(transactions.hash, hash)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[TransactionDAO] Transaction with hash ${hash} not found.`);
         return null;
       }
       
-      // Convert database format to Transaction with camelCase mapping
+      console.log(`[TransactionDAO] Transaction with hash ${hash} found.`);
       const dbTx = result[0];
+      // Removed duplicate const dbTx = result[0];
       return {
         hash: dbTx.hash,
         type: dbTx.type as TransactionType,
@@ -74,8 +72,8 @@ export class TransactionDao {
         metadata: dbTx.metadata || undefined,
       };
     } catch (error) {
-      console.error('Error getting transaction by hash:', error);
-      throw new Error('Failed to get transaction');
+      console.error(`[TransactionDAO] Error getting transaction by hash ${hash}:`, error.message);
+      throw new Error(`Failed to get transaction for hash ${hash}: ${error.message}`);
     }
   }
 
@@ -87,9 +85,9 @@ export class TransactionDao {
    * @returns Array of transactions
    */
   async getTransactionsByAddress(address: string, limit: number = 20, offset: number = 0): Promise<Transaction[]> {
+    console.log(`[TransactionDAO] getTransactionsByAddress called for address: ${address}, limit: ${limit}, offset: ${offset}`);
     try {
-      const result = await db.select()
-        .from(transactions)
+      const result = await db.select().from(transactions)
         .where(
           or(
             eq(transactions.fromAddress, address),
@@ -99,8 +97,7 @@ export class TransactionDao {
         .orderBy(desc(transactions.timestamp))
         .limit(limit)
         .offset(offset);
-      
-      // Convert database format to Transaction[] with camelCase mapping
+      console.log(`[TransactionDAO] Found ${result.length} transactions for address ${address}.`);
       return result.map(dbTx => ({
         hash: dbTx.hash,
         type: dbTx.type as TransactionType,
@@ -116,8 +113,8 @@ export class TransactionDao {
         metadata: dbTx.metadata || undefined,
       }));
     } catch (error) {
-      console.error('Error getting transactions by address:', error);
-      throw new Error('Failed to get transactions');
+      console.error(`[TransactionDAO] Error getting transactions by address ${address}:`, error.message);
+      throw new Error(`Failed to get transactions for address ${address}: ${error.message}`);
     }
   }
 
@@ -127,13 +124,12 @@ export class TransactionDao {
    * @returns Array of transactions
    */
   async getTransactionsByBlockHeight(blockHeight: number): Promise<Transaction[]> {
+    console.log(`[TransactionDAO] getTransactionsByBlockHeight called for blockHeight: ${blockHeight}`);
     try {
-      const result = await db.select()
-        .from(transactions)
+      const result = await db.select().from(transactions)
         .where(eq(transactions.blockHeight, blockHeight))
         .orderBy(desc(transactions.timestamp));
-      
-      // Convert database format to Transaction[] with camelCase mapping
+      console.log(`[TransactionDAO] Found ${result.length} transactions for blockHeight ${blockHeight}.`);
       return result.map(dbTx => ({
         hash: dbTx.hash,
         type: dbTx.type as TransactionType,
@@ -149,8 +145,8 @@ export class TransactionDao {
         metadata: dbTx.metadata || undefined,
       }));
     } catch (error) {
-      console.error('Error getting transactions by block height:', error);
-      throw new Error('Failed to get transactions');
+      console.error(`[TransactionDAO] Error getting transactions by blockHeight ${blockHeight}:`, error.message);
+      throw new Error(`Failed to get transactions for blockHeight ${blockHeight}: ${error.message}`);
     }
   }
 
@@ -162,21 +158,20 @@ export class TransactionDao {
    * @returns Updated transaction
    */
   async updateTransactionStatus(hash: string, status: 'pending' | 'confirmed' | 'failed', blockHeight?: number): Promise<Transaction | null> {
+    console.log(`[TransactionDAO] updateTransactionStatus called for hash: ${hash}, status: ${status}, blockHeight: ${blockHeight}`);
     try {
       const updateData: any = { status };
       if (blockHeight !== undefined) {
         updateData.blockHeight = blockHeight;
       }
       
-      await db.update(transactions)
-        .set(updateData)
-        .where(eq(transactions.hash, hash));
+      await db.update(transactions).set(updateData).where(eq(transactions.hash, hash));
+      console.log(`[TransactionDAO] Transaction ${hash} status updated to ${status}.`);
       
-      // Return updated transaction
-      return this.getTransactionByHash(hash);
+      return this.getTransactionByHash(hash); // getTransactionByHash already logs
     } catch (error) {
-      console.error('Error updating transaction status:', error);
-      throw new Error('Failed to update transaction');
+      console.error(`[TransactionDAO] Error updating transaction status for ${hash}:`, error.message);
+      throw new Error(`Failed to update transaction status for ${hash}: ${error.message}`);
     }
   }
 
@@ -186,13 +181,10 @@ export class TransactionDao {
    * @returns Array of transactions
    */
   async getRecentTransactions(limit: number = 20): Promise<Transaction[]> {
+    console.log(`[TransactionDAO] getRecentTransactions called with limit: ${limit}`);
     try {
-      const result = await db.select()
-        .from(transactions)
-        .orderBy(desc(transactions.timestamp))
-        .limit(limit);
-      
-      // Convert database format to Transaction[] with camelCase mapping
+      const result = await db.select().from(transactions).orderBy(desc(transactions.timestamp)).limit(limit);
+      console.log(`[TransactionDAO] Found ${result.length} recent transactions.`);
       return result.map(dbTx => ({
         hash: dbTx.hash,
         type: dbTx.type as TransactionType,
@@ -208,8 +200,8 @@ export class TransactionDao {
         metadata: dbTx.metadata || undefined,
       }));
     } catch (error) {
-      console.error('Error getting recent transactions:', error);
-      throw new Error('Failed to get transactions');
+      console.error(`[TransactionDAO] Error getting recent transactions:`, error.message);
+      throw new Error(`Failed to get recent transactions: ${error.message}`);
     }
   }
 
@@ -221,9 +213,9 @@ export class TransactionDao {
    * @returns Transaction count
    */
   async getTransactionCountByType(type: TransactionType, startTime: number, endTime: number): Promise<number> {
+    console.log(`[TransactionDAO] getTransactionCountByType called for type: ${type}, startTime: ${startTime}, endTime: ${endTime}`);
     try {
-      const result = await db.select({ count: sql`count(*)` })
-        .from(transactions)
+      const result = await db.select({ count: sql<number>`count(*)` }).from(transactions)
         .where(
           and(
             eq(transactions.type, type),
@@ -231,11 +223,12 @@ export class TransactionDao {
             sql`${transactions.timestamp} <= ${BigInt(endTime)}`
           )
         );
-      
-      return Number(result[0]?.count || 0);
+      const count = Number(result[0]?.count || 0);
+      console.log(`[TransactionDAO] Found ${count} transactions of type ${type} in the given time range.`);
+      return count;
     } catch (error) {
-      console.error('Error getting transaction count by type:', error);
-      throw new Error('Failed to get transaction count');
+      console.error(`[TransactionDAO] Error getting transaction count by type ${type}:`, error.message);
+      throw new Error(`Failed to get transaction count for type ${type}: ${error.message}`);
     }
   }
 
@@ -244,14 +237,15 @@ export class TransactionDao {
    * @returns Total transaction count
    */
   async getTotalTransactionCount(): Promise<number> {
+    console.log(`[TransactionDAO] getTotalTransactionCount called.`);
     try {
-      const result = await db.select({ count: sql`count(*)` })
-        .from(transactions);
-      
-      return Number(result[0]?.count || 0);
+      const result = await db.select({ count: sql<number>`count(*)` }).from(transactions);
+      const count = Number(result[0]?.count || 0);
+      console.log(`[TransactionDAO] Total transaction count: ${count}.`);
+      return count;
     } catch (error) {
-      console.error('Error getting total transaction count:', error);
-      throw new Error('Failed to get transaction count');
+      console.error(`[TransactionDAO] Error getting total transaction count:`, error.message);
+      throw new Error(`Failed to get total transaction count: ${error.message}`);
     }
   }
 
@@ -260,13 +254,12 @@ export class TransactionDao {
    * @returns Array of pending transactions
    */
   async getPendingTransactions(): Promise<Transaction[]> {
+    console.log(`[TransactionDAO] getPendingTransactions called.`);
     try {
-      const result = await db.select()
-        .from(transactions)
+      const result = await db.select().from(transactions)
         .where(eq(transactions.status, 'pending'))
         .orderBy(desc(transactions.timestamp));
-      
-      // Convert database format to Transaction[] with camelCase mapping
+      console.log(`[TransactionDAO] Found ${result.length} pending transactions.`);
       return result.map(dbTx => ({
         hash: dbTx.hash,
         type: dbTx.type as TransactionType,
@@ -276,14 +269,14 @@ export class TransactionDao {
         timestamp: Number(dbTx.timestamp),
         nonce: Number(dbTx.nonce),
         signature: dbTx.signature,
-        status: 'pending',
+        status: 'pending', // Explicitly pending
         blockHeight: dbTx.blockHeight || undefined,
         fee: dbTx.fee ? Number(dbTx.fee) : undefined,
         metadata: dbTx.metadata || undefined,
       }));
     } catch (error) {
-      console.error('Error getting pending transactions:', error);
-      throw new Error('Failed to get pending transactions');
+      console.error(`[TransactionDAO] Error getting pending transactions:`, error.message);
+      throw new Error(`Failed to get pending transactions: ${error.message}`);
     }
   }
 }

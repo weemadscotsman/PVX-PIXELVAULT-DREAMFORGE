@@ -13,8 +13,8 @@ export class DropDao {
    * @returns Created drop
    */
   async createDrop(drop: Drop): Promise<Drop> {
+    console.log(`[DropDAO] createDrop called for drop ID: ${drop.id}, Name: ${drop.name}`);
     try {
-      // Convert drop to database format
       const dbDrop = {
         id: drop.id,
         name: drop.name,
@@ -32,14 +32,12 @@ export class DropDao {
         securityScore: drop.securityScore
       };
 
-      // Insert drop
       await db.insert(drops).values(dbDrop);
-      
-      // Return original drop
+      console.log(`[DropDAO] Drop ${drop.id} - ${drop.name} created successfully.`);
       return drop;
     } catch (error) {
-      console.error('Error creating drop:', error);
-      throw new Error('Failed to create drop');
+      console.error(`[DropDAO] Error creating drop ${drop.id}:`, error.message);
+      throw new Error(`Failed to create drop ${drop.id}: ${error.message}`);
     }
   }
 
@@ -49,17 +47,17 @@ export class DropDao {
    * @returns Drop or undefined if not found
    */
   async getDropById(id: string): Promise<Drop | undefined> {
+    console.log(`[DropDAO] getDropById called for ID: ${id}`);
     try {
-      const result = await db.select()
-        .from(drops)
-        .where(eq(drops.id, id))
-        .limit(1);
+      const result = await db.select().from(drops).where(eq(drops.id, id)).limit(1);
       
       if (result.length === 0) {
+        console.log(`[DropDAO] Drop with ID ${id} not found.`);
         return undefined;
       }
       
-      // Convert database format to Drop
+      console.log(`[DropDAO] Drop with ID ${id} found: ${result[0].name}`);
+      const dbDrop = result[0];
       const dbDrop = result[0];
       return {
         id: dbDrop.id,
@@ -78,8 +76,8 @@ export class DropDao {
         securityScore: dbDrop.securityScore
       };
     } catch (error) {
-      console.error('Error getting drop by ID:', error);
-      throw new Error('Failed to get drop');
+      console.error(`[DropDAO] Error getting drop by ID ${id}:`, error.message);
+      throw new Error(`Failed to get drop for ID ${id}: ${error.message}`);
     }
   }
 
@@ -88,13 +86,12 @@ export class DropDao {
    * @returns Array of active drops
    */
   async getActiveDrops(): Promise<Drop[]> {
+    console.log(`[DropDAO] getActiveDrops called.`);
     try {
-      const result = await db.select()
-        .from(drops)
+      const result = await db.select().from(drops)
         .where(gt(drops.expiresAt, new Date()))
         .orderBy(desc(drops.createdAt));
-      
-      // Convert database format to Drop[]
+      console.log(`[DropDAO] Found ${result.length} active drops.`);
       return result.map(dbDrop => ({
         id: dbDrop.id,
         name: dbDrop.name,
@@ -112,8 +109,8 @@ export class DropDao {
         securityScore: dbDrop.securityScore
       }));
     } catch (error) {
-      console.error('Error getting active drops:', error);
-      throw new Error('Failed to get active drops');
+      console.error(`[DropDAO] Error getting active drops:`, error.message);
+      throw new Error(`Failed to get active drops: ${error.message}`);
     }
   }
 
@@ -124,21 +121,18 @@ export class DropDao {
    * @returns True if the drop has been claimed, false otherwise
    */
   async hasDropBeenClaimed(dropId: string, walletAddress: string): Promise<boolean> {
+    console.log(`[DropDAO] hasDropBeenClaimed called for DropID: ${dropId}, Wallet: ${walletAddress}`);
     try {
-      const result = await db.select()
-        .from(dropClaims)
-        .where(
-          and(
-            eq(dropClaims.dropId, dropId),
-            eq(dropClaims.walletAddress, walletAddress)
-          )
-        )
+      const result = await db.select().from(dropClaims)
+        .where(and(eq(dropClaims.dropId, dropId), eq(dropClaims.walletAddress, walletAddress)))
         .limit(1);
       
-      return result.length > 0;
+      const claimed = result.length > 0;
+      console.log(`[DropDAO] Drop ${dropId} ${claimed ? 'has' : 'has not'} been claimed by wallet ${walletAddress}.`);
+      return claimed;
     } catch (error) {
-      console.error('Error checking if drop has been claimed:', error);
-      throw new Error('Failed to check if drop has been claimed');
+      console.error(`[DropDAO] Error checking if drop ${dropId} has been claimed by ${walletAddress}:`, error.message);
+      throw new Error(`Failed to check if drop ${dropId} has been claimed: ${error.message}`);
     }
   }
 
@@ -148,15 +142,15 @@ export class DropDao {
    * @returns Number of claims
    */
   async getDropClaimCount(dropId: string): Promise<number> {
+    console.log(`[DropDAO] getDropClaimCount called for DropID: ${dropId}`);
     try {
-      const result = await db.select({ count: db.fn.count() })
-        .from(dropClaims)
-        .where(eq(dropClaims.dropId, dropId));
-      
-      return Number(result[0]?.count || 0);
+      const result = await db.select({ count: db.fn.count() }).from(dropClaims).where(eq(dropClaims.dropId, dropId));
+      const count = Number(result[0]?.count || 0);
+      console.log(`[DropDAO] Drop ${dropId} has ${count} claims.`);
+      return count;
     } catch (error) {
-      console.error('Error getting drop claim count:', error);
-      throw new Error('Failed to get drop claim count');
+      console.error(`[DropDAO] Error getting drop claim count for ${dropId}:`, error.message);
+      throw new Error(`Failed to get drop claim count for ${dropId}: ${error.message}`);
     }
   }
 
@@ -168,31 +162,37 @@ export class DropDao {
    * @returns Created drop claim
    */
   async claimDrop(dropId: string, walletAddress: string, transactionHash?: string): Promise<DropClaim> {
+    console.log(`[DropDAO] claimDrop called for DropID: ${dropId}, Wallet: ${walletAddress}`);
     try {
-      // Check if drop exists
-      const drop = await this.getDropById(dropId);
+      const drop = await this.getDropById(dropId); // Already logs
       if (!drop) {
+        console.error(`[DropDAO] Attempted to claim non-existent drop ${dropId}.`);
         throw new Error(`Drop not found: ${dropId}`);
       }
       
-      // Check if drop has already been claimed
       const hasBeenClaimed = await this.hasDropBeenClaimed(dropId, walletAddress);
       if (hasBeenClaimed) {
         throw new Error('Drop has already been claimed by this wallet');
       }
       
-      // Check if drop claim limit has been reached
-      const claimCount = await this.getDropClaimCount(dropId);
+      const hasBeenClaimed = await this.hasDropBeenClaimed(dropId, walletAddress); // Already logs
+      if (hasBeenClaimed) {
+        console.warn(`[DropDAO] Wallet ${walletAddress} has already claimed drop ${dropId}.`);
+        throw new Error('Drop has already been claimed by this wallet');
+      }
+
+      const claimCount = await this.getDropClaimCount(dropId); // Already logs
       if (claimCount >= drop.claimLimit) {
+        console.warn(`[DropDAO] Claim limit reached for drop ${dropId}. Limit: ${drop.claimLimit}, Count: ${claimCount}`);
         throw new Error('Drop claim limit has been reached');
       }
       
-      // Check if drop has expired
       if (new Date() > drop.expiresAt) {
+        console.warn(`[DropDAO] Attempted to claim expired drop ${dropId}. Expires: ${drop.expiresAt}`);
         throw new Error('Drop has expired');
       }
       
-      // Create drop claim
+      console.log(`[DropDAO] All checks passed for claiming drop ${dropId} by wallet ${walletAddress}. Creating claim...`);
       const dropClaim: DropClaim = {
         dropId,
         walletAddress,
@@ -200,7 +200,6 @@ export class DropDao {
         transactionHash
       };
       
-      // Convert drop claim to database format
       const dbDropClaim = {
         dropId: dropClaim.dropId,
         walletAddress: dropClaim.walletAddress,
@@ -208,14 +207,17 @@ export class DropDao {
         transactionHash: dropClaim.transactionHash
       };
 
-      // Insert drop claim
       await db.insert(dropClaims).values(dbDropClaim);
-      
-      // Return drop claim
+      console.log(`[DropDAO] Drop ${dropId} successfully claimed by wallet ${walletAddress}. TxHash: ${transactionHash}`);
       return dropClaim;
     } catch (error) {
-      console.error('Error claiming drop:', error);
-      throw error;
+      // Error already logged by sub-functions if they throw, or specific error logged here.
+      // Avoid re-logging generic "Error claiming drop" if a specific reason was already thrown.
+      if (!error.message.startsWith('Drop not found') && !error.message.startsWith('Drop has already been claimed') &&
+          !error.message.startsWith('Drop claim limit') && !error.message.startsWith('Drop has expired')) {
+        console.error(`[DropDAO] Error claiming drop ${dropId} for wallet ${walletAddress}:`, error.message);
+      }
+      throw error; // Re-throw original error for controller to handle
     }
   }
 
@@ -225,13 +227,12 @@ export class DropDao {
    * @returns Array of drop claims
    */
   async getDropClaimsByWallet(walletAddress: string): Promise<DropClaim[]> {
+    console.log(`[DropDAO] getDropClaimsByWallet called for Wallet: ${walletAddress}`);
     try {
-      const result = await db.select()
-        .from(dropClaims)
+      const result = await db.select().from(dropClaims)
         .where(eq(dropClaims.walletAddress, walletAddress))
         .orderBy(desc(dropClaims.claimedAt));
-      
-      // Convert database format to DropClaim[]
+      console.log(`[DropDAO] Found ${result.length} drop claims for wallet ${walletAddress}.`);
       return result.map(dbDropClaim => ({
         dropId: dbDropClaim.dropId,
         walletAddress: dbDropClaim.walletAddress,
@@ -239,8 +240,8 @@ export class DropDao {
         transactionHash: dbDropClaim.transactionHash ?? undefined
       }));
     } catch (error) {
-      console.error('Error getting drop claims by wallet:', error);
-      throw new Error('Failed to get drop claims');
+      console.error(`[DropDAO] Error getting drop claims for wallet ${walletAddress}:`, error.message);
+      throw new Error(`Failed to get drop claims for wallet ${walletAddress}: ${error.message}`);
     }
   }
 
@@ -250,13 +251,12 @@ export class DropDao {
    * @returns Array of drop claims
    */
   async getDropClaimsByDropId(dropId: string): Promise<DropClaim[]> {
+    console.log(`[DropDAO] getDropClaimsByDropId called for DropID: ${dropId}`);
     try {
-      const result = await db.select()
-        .from(dropClaims)
+      const result = await db.select().from(dropClaims)
         .where(eq(dropClaims.dropId, dropId))
         .orderBy(desc(dropClaims.claimedAt));
-      
-      // Convert database format to DropClaim[]
+      console.log(`[DropDAO] Found ${result.length} claims for drop ${dropId}.`);
       return result.map(dbDropClaim => ({
         dropId: dbDropClaim.dropId,
         walletAddress: dbDropClaim.walletAddress,
@@ -264,8 +264,8 @@ export class DropDao {
         transactionHash: dbDropClaim.transactionHash ?? undefined
       }));
     } catch (error) {
-      console.error('Error getting drop claims by drop ID:', error);
-      throw new Error('Failed to get drop claims');
+      console.error(`[DropDAO] Error getting drop claims for drop ${dropId}:`, error.message);
+      throw new Error(`Failed to get drop claims for drop ${dropId}: ${error.message}`);
     }
   }
 
@@ -277,20 +277,22 @@ export class DropDao {
    * @returns Success status
    */
   async updateDropClaimTransactionHash(dropId: string, walletAddress: string, transactionHash: string): Promise<boolean> {
+    console.log(`[DropDAO] updateDropClaimTransactionHash called for DropID: ${dropId}, Wallet: ${walletAddress}, TxHash: ${transactionHash}`);
     try {
-      await db.update(dropClaims)
-        .set({ transactionHash })
-        .where(
-          and(
-            eq(dropClaims.dropId, dropId),
-            eq(dropClaims.walletAddress, walletAddress)
-          )
-        );
+      const result = await db.update(dropClaims).set({ transactionHash })
+        .where(and(eq(dropClaims.dropId, dropId), eq(dropClaims.walletAddress, walletAddress)))
+        .returning(); // Check if update was successful
       
-      return true;
+      if (result && result.length > 0) {
+        console.log(`[DropDAO] Transaction hash for drop claim (DropID: ${dropId}, Wallet: ${walletAddress}) updated successfully.`);
+        return true;
+      } else {
+        console.warn(`[DropDAO] No drop claim found to update transaction hash for DropID: ${dropId}, Wallet: ${walletAddress}.`);
+        return false;
+      }
     } catch (error) {
-      console.error('Error updating drop claim transaction hash:', error);
-      throw new Error('Failed to update drop claim transaction hash');
+      console.error(`[DropDAO] Error updating drop claim transaction hash for DropID: ${dropId}, Wallet: ${walletAddress}:`, error.message);
+      throw new Error(`Failed to update drop claim transaction hash for DropID: ${dropId}, Wallet: ${walletAddress}: ${error.message}`);
     }
   }
 }
