@@ -1,6 +1,19 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { memBlockchainStorage } from '../mem-blockchain';
+// Define CanonicalPayload and createPayloadString locally for txController
+interface CanonicalPayload {
+  from: string;
+  to: string;
+  amount: number;
+  nonce: number;
+  timestamp: number;
+}
+
+function createPayloadString(payload: CanonicalPayload): string {
+  // Ensure the order and types match client-side serialization for signature verification
+  return `${payload.from}|${payload.to}|${payload.amount}|${payload.nonce}|${payload.timestamp}`;
+}
 import { transactionDao } from '../database/transactionDao';
 import { walletDao } from '../database/walletDao';
 import * as cryptoUtils from '../utils/crypto';
@@ -14,113 +27,167 @@ import { broadcastTransaction } from '../utils/websocket';
  * POST /api/tx/send
  */
 export const sendTransaction = async (req: Request, res: Response) => {
-  console.log(`[TxController] sendTransaction: Request received ${req.method} ${req.originalUrl}`);
+  console.log(`[TxController] sendTransaction (signed): Request received ${req.method} ${req.originalUrl}`);
   try {
-    const { from, to, amount, passphrase, memo } = req.body; // Passphrase itself won't be logged for security
-    console.log(`[TxController] sendTransaction: Body - from=${from}, to=${to}, amount=${amount}, memo=${memo ? 'present' : 'not present'}`);
-    
-    if (!from || !to || !amount || !passphrase) {
-      console.warn(`[TxController] sendTransaction: Missing required fields. From: ${from}, To: ${to}, Amount: ${amount}, Passphrase: ${passphrase ? 'present' : 'missing'}`);
-      return res.status(400).json({ error: 'From address, to address, amount, and passphrase are required' });
+import { base64SpkiToPem } from '../utils/formatters'; // Ensure this is at the top with other imports
+
+export const sendTransaction = async (req: Request, res: Response) => {
+  console.log(`[TxController] sendTransaction (signed): Request received ${req.method} ${req.originalUrl}`);
+  try {
+    const { transactionData, signature, senderPublicKey: clientSuppliedBase64Spki } = req.body; // Renamed for clarity
+    console.log(`[TxController] sendTransaction (signed): From=${transactionData?.from}, To=${transactionData?.to}, Amount=${transactionData?.amount}, Signature=${signature ? signature.substring(0,10)+'...' : 'N/A'}, ClientPK(base64SPKI)=${clientSuppliedBase64Spki ? clientSuppliedBase64Spki.substring(0,30)+'...' : 'N/A'}`);
+
+    if (!transactionData || !signature || !clientSuppliedBase64Spki || !transactionData.from) {
+      console.warn(`[TxController] sendTransaction (signed): Missing required fields for signed transaction.`);
+      return res.status(400).json({ error: 'Transaction data, signature, and sender public key are required.' });
+    }
+
+    const { from, to, amount, timestamp, nonce, memo } = transactionData;
+
+    if (!from || !to || amount === undefined || !timestamp || nonce === undefined) {
+      console.warn(`[TxController] sendTransaction (signed): Missing fields in transactionData. From: ${from}, To: ${to}, Amount: ${amount}, Timestamp: ${timestamp}, Nonce: ${nonce}`);
+      return res.status(400).json({ error: 'TransactionData must include from, to, amount, timestamp, and nonce.' });
     }
     
-    console.log(`[TxController] sendTransaction: Verifying sender wallet ${from} in memBlockchainStorage.`);
-    const wallet = await memBlockchainStorage.getWalletByAddress(from); // Assumes memBlockchainStorage logs if needed
-    if (!wallet) {
-      console.warn(`[TxController] sendTransaction: Sender wallet ${from} not found.`);
-      return res.status(404).json({ error: 'Sender wallet not found' });
+    console.log(`[TxController] sendTransaction (signed): Fetching sender wallet ${from}.`);
+    let senderWallet;
+    try {
+      senderWallet = await walletDao.getWalletByAddress(from); // Prioritize DB
+      if (senderWallet) {
+        console.log(`[TxController] sendTransaction (signed): Sender wallet ${from} found in DB.`);
+      }
+    } catch (dbError) {
+      console.warn(`[TxController] sendTransaction (signed): Error fetching wallet ${from} from walletDao: ${dbError.message}. Trying memBlockchainStorage.`);
     }
-    
-    console.log(`[TxController] sendTransaction: Verifying passphrase for wallet ${from}.`);
-    const isPassphraseValid = passphraseUtils.verifyPassphrase(
-      passphrase,
-      wallet.passphraseSalt,
-      wallet.passphraseHash
-    );
-    
-    // Log verification outcome (already done in service/utils)
-    // console.log('Transaction send passphrase verification:', { address: from, valid: isPassphraseValid });
-    
-    if (!isPassphraseValid) {
-      if (process.env.NODE_ENV !== 'production' && passphraseUtils.isKnownTestWallet(from)) {
-        console.log(`[TxController] sendTransaction: DEV MODE - Bypassing passphrase check for known test wallet ${from}.`);
-      } else {
-        console.warn(`[TxController] sendTransaction: Invalid passphrase for wallet ${from}.`);
-        return res.status(401).json({ error: 'Invalid passphrase' });
+
+    if (!senderWallet) {
+      senderWallet = await memBlockchainStorage.getWalletByAddress(from); // Fallback to memory
+      if (senderWallet) {
+        console.log(`[TxController] sendTransaction (signed): Sender wallet ${from} found in memBlockchainStorage.`);
       }
     }
-    
-    console.log(`[TxController] sendTransaction: Passphrase verified for ${from}. Checking balance.`);
-    if (BigInt(wallet.balance) < BigInt(amount)) {
-      console.warn(`[TxController] sendTransaction: Insufficient balance for wallet ${from}. Balance: ${wallet.balance}, Amount: ${amount}`);
+
+    if (!senderWallet) {
+      console.warn(`[TxController] sendTransaction (signed): Sender wallet ${from} not found in DB or memory.`);
+      return res.status(404).json({ error: 'Sender wallet not found.' });
+    }
+    console.log(`[TxController] sendTransaction (signed): Sender wallet ${from} found. Stored PK: ${senderWallet.publicKey ? senderWallet.publicKey.substring(0,30)+'...' : 'N/A'}`);
+
+    if (!senderWallet.publicKey) {
+        console.error(`[TxController] sendTransaction (signed): Stored wallet for ${from} has no public key.`);
+        return res.status(400).json({ error: 'Sender public key not found on server.' });
+    }
+
+    // Convert client-supplied base64 SPKI public key to PEM format
+    const pemSenderPublicKey = base64SpkiToPem(clientSuppliedBase64Spki);
+    console.log(`[TxController] sendTransaction (signed): Converted client PK to PEM for verification: ${pemSenderPublicKey.substring(0,60)}...`);
+
+    // Compare the PEM-formatted public key from request with the PEM-formatted stored public key
+    if (senderWallet.publicKey !== pemSenderPublicKey) {
+      console.error(`[TxController] sendTransaction (signed): Public key mismatch for sender ${from}. Request PK (PEM): ${pemSenderPublicKey.substring(0,60)+'...'}, Stored PK (PEM): ${senderWallet.publicKey.substring(0,60)+'...'.substring(0,30)}`);
+      return res.status(401).json({ error: 'Public key mismatch. Transaction unauthorized.' });
+    }
+    console.log(`[TxController] sendTransaction (signed): Sender public key (PEM) matches stored public key for address ${from}.`);
+
+    // Create the canonical payload string using the server-side function
+    // Ensure the fields sent to createPayloadString match the CanonicalPayload interface (numeric amount, nonce, timestamp)
+    const payloadForSigning: CanonicalPayload = {
+        from: transactionData.from,
+        to: transactionData.to,
+        amount: Number(transactionData.amount),
+        nonce: Number(transactionData.nonce),
+        timestamp: Number(transactionData.timestamp),
+    };
+    const payloadString = createPayloadString(payloadForSigning);
+    console.log(`[TxController] sendTransaction (signed): Verifying signature for server-side canonical payload: ${payloadString}`);
+
+    const isSignatureValid = cryptoUtils.verifySignature(payloadString, signature, pemSenderPublicKey);
+
+    if (!isSignatureValid) {
+      console.warn(`[TxController] sendTransaction (signed): Invalid transaction signature for wallet ${from} using server-side canonical string.`);
+      return res.status(401).json({ error: 'Invalid transaction signature.' });
+    }
+    console.log(`[TxController] sendTransaction (signed): Signature verified successfully for wallet ${from}. Checking balance.`);
+
+    if (BigInt(senderWallet.balance) < BigInt(amount)) {
+      console.warn(`[TxController] sendTransaction (signed): Insufficient balance for wallet ${from}. Balance: ${senderWallet.balance}, Amount: ${amount}`);
       return res.status(400).json({ error: 'Insufficient balance' });
     }
+    console.log(`[TxController] sendTransaction (signed): Balance sufficient for ${from}. Processing transaction.`);
+
+    const txHash = crypto.createHash('sha256').update(payloadString).digest('hex'); // Hash of the canonical payload string
     
-    console.log(`[TxController] sendTransaction: Balance sufficient for ${from}. Creating transaction.`);
-    const timestamp = Date.now();
-    const txHash = crypto.createHash('sha256')
-      .update(from + to + amount + timestamp.toString())
-      .digest('hex');
-    
-    const transaction: Transaction = {
+    const newTransaction: Transaction = {
       hash: txHash,
-      type: 'TRANSFER',
+      type: 'TRANSFER', // Or derive from transactionData if it includes type
       from,
       to,
-      amount,
-      timestamp,
-      nonce: Math.floor(Math.random() * 100000),
-      signature: cryptoUtils.generateRandomHash(),
-      status: 'pending'
+      amount: Number(amount),
+      timestamp: Number(timestamp),
+      nonce: Number(nonce),
+      signature: signature, // Store the client's signature
+      status: 'pending',
+      metadata: { memo: memo || "" }
     };
     
     // Update sender wallet balance
-    const senderBalance = BigInt(wallet.balance) - BigInt(amount);
-    wallet.balance = senderBalance.toString();
-    await memBlockchainStorage.updateWallet(wallet);
-    
-    // Add to or create receiver wallet
-    const receiverWallet = await memBlockchainStorage.getWalletByAddress(to);
+    const senderBalance = BigInt(senderWallet.balance) - BigInt(amount);
+    senderWallet.balance = senderBalance.toString();
+    await memBlockchainStorage.updateWallet(senderWallet); // Update in memory for immediate effect
+    // Consider updating via walletDao if DB is primary source of truth and available
+    try { await walletDao.updateWalletBalance(from, senderWallet.balance); } catch(e){ console.warn(`[TxController] Failed to update sender balance in DB for ${from}: ${e.message}`)}
+
+    console.log(`[TxController] sendTransaction (signed): Sender ${from} balance updated.`);
+
+    // Update receiver wallet balance (or create if non-existent)
+    let receiverWallet = await memBlockchainStorage.getWalletByAddress(to);
     if (receiverWallet) {
       const receiverBalance = BigInt(receiverWallet.balance) + BigInt(amount);
       receiverWallet.balance = receiverBalance.toString();
       await memBlockchainStorage.updateWallet(receiverWallet);
+      try { await walletDao.updateWalletBalance(to, receiverWallet.balance); } catch(e){ console.warn(`[TxController] Failed to update receiver balance in DB for ${to}: ${e.message}`)}
+      console.log(`[TxController] sendTransaction (signed): Receiver ${to} balance updated.`);
     } else {
-      // Create receiver wallet if it doesn't exist
-      await memBlockchainStorage.createWallet({
+      console.log(`[TxController] sendTransaction (signed): Receiver wallet ${to} not found, creating.`);
+      const newReceiverWallet = {
         address: to,
-        publicKey: cryptoUtils.generateRandomHash(),
-        balance: amount,
+        // IMPORTANT: Receiver's public key isn't known here. This is a simplification.
+        // In a real system, an account (address) must exist with a known public key
+        // or transactions to new addresses might be unspendable or require a different flow.
+        publicKey: 'receiver_pk_placeholder_' + to,
+        balance: amount.toString(),
         createdAt: new Date(),
-        lastUpdated: new Date(), // Changed from lastSynced to match database schema
-        passphraseSalt: '',
-        passphraseHash: ''
-      });
+        lastUpdated: new Date(),
+      };
+      await memBlockchainStorage.createWallet(newReceiverWallet);
+      try { await walletDao.createWallet(newReceiverWallet); } catch(e){ console.warn(`[TxController] Failed to create receiver wallet in DB for ${to}: ${e.message}`)}
+      console.log(`[TxController] sendTransaction (signed): Receiver wallet ${to} created.`);
     }
     
-    await memBlockchainStorage.createTransaction(transaction); // Assumes memBlockchainStorage logs
-    console.log(`[TxController] sendTransaction: Transaction ${txHash} (type: ${transaction.type}) created and stored in memBlockchainStorage.`);
+    await memBlockchainStorage.createTransaction(newTransaction);
+    console.log(`[TxController] sendTransaction (signed): Transaction ${txHash} (type: ${newTransaction.type}) stored in memBlockchainStorage.`);
+    try { await transactionDao.createTransaction(newTransaction); } catch(e){ console.warn(`[TxController] Failed to save transaction ${txHash} to DB: ${e.message}`)}
     
     try {
-      broadcastTransaction(transaction);
-      console.log(`[TxController] sendTransaction: Transaction ${txHash} broadcasted via WebSocket.`);
+      broadcastTransaction(newTransaction);
+      console.log(`[TxController] sendTransaction (signed): Transaction ${txHash} broadcasted via WebSocket.`);
     } catch (err) {
-      console.error('[TxController] sendTransaction: Error broadcasting transaction via WebSocket:', err.message);
+      console.error('[TxController] sendTransaction (signed): Error broadcasting transaction via WebSocket:', err.message);
     }
     
     try {
-      console.log(`[TxController] sendTransaction: Checking transaction badges for sender ${from}.`);
-      const senderTxs = await memBlockchainStorage.getTransactionsByAddress(from);
-      await checkTransactionBadges(from, transaction.type as TransactionType, senderTxs.length); // Pass correct type
-      console.log(`[TxController] sendTransaction: Transaction badges checked for ${from}.`);
+      console.log(`[TxController] sendTransaction (signed): Checking transaction badges for sender ${from}.`);
+      const senderTxs = await memBlockchainStorage.getTransactionsByAddress(from); // Or from DB for accuracy
+      await checkTransactionBadges(from, newTransaction.type as TransactionType, senderTxs.length);
+      console.log(`[TxController] sendTransaction (signed): Transaction badges checked for ${from}.`);
     } catch (err) {
-      console.error('[TxController] sendTransaction: Error checking transaction badges:', err.message);
+      console.error('[TxController] sendTransaction (signed): Error checking transaction badges:', err.message);
     }
     
-    console.log(`[TxController] sendTransaction: Sending 201 Created response for transaction ${txHash}.`);
-    res.status(201).json({ tx_hash: txHash, status: 'success' });
+    console.log(`[TxController] sendTransaction (signed): Sending 201 Created response for transaction ${txHash}.`);
+    res.status(201).json({ tx_hash: txHash, status: 'success', transaction: newTransaction });
   } catch (error) {
-    console.error(`[TxController] sendTransaction: Error processing send transaction from ${req.body.from} to ${req.body.to}:`, error.message);
+    console.error(`[TxController] sendTransaction (signed): Error processing signed transaction from ${req.body?.transactionData?.from}:`, error.message, error.stack);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to send transaction'
     });

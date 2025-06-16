@@ -1,11 +1,16 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
-import * as cryptoUtils from '../utils/crypto';
+import * as cryptoUtils from '../utils/crypto'; // Uses RSA verifySignature, generateWalletAddress
 import * as passphraseUtils from '../utils/passphrase';
-import { memBlockchainStorage } from '../mem-blockchain';
+import { memBlockchainStorage, Wallet as MemWallet } from '../mem-blockchain'; // Assuming Wallet type from mem-blockchain can be used or adapted
 import { walletDao } from '../database/walletDao';
 import { transactionDao } from '../database/transactionDao';
 import jwt from 'jsonwebtoken';
+
+import { walletDao } from '../database/walletDao';
+import { transactionDao } from '../database/transactionDao';
+import jwt from 'jsonwebtoken';
+import { base64SpkiToPem } from '../utils/formatters'; // Import the new helper
 
 // Secret for JWT signing
 const JWT_SECRET = process.env.JWT_SECRET || 'pixelvault-wallet-session-secret';
@@ -15,6 +20,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'pixelvault-wallet-session-secret';
  * POST /api/wallet/:address/auth
  */
 export const authenticateWallet = async (req: Request, res: Response) => {
+  // This function likely still relies on passphrase for session authentication,
+  // which is separate from transaction signing. No changes needed here for now unless
+  // session management itself also moves to signature-based challenges.
+  // For brevity, keeping existing logging and logic.
   try {
     const { address } = req.params;
     const { passphrase } = req.body;
@@ -23,13 +32,11 @@ export const authenticateWallet = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Passphrase is required' });
     }
     
-    // Verify wallet exists
     const wallet = await memBlockchainStorage.getWalletByAddress(address);
     if (!wallet) {
       return res.status(404).json({ error: 'Wallet not found' });
     }
     
-    // Verify passphrase
     if (!wallet.passphraseSalt || !wallet.passphraseHash) {
       return res.status(400).json({ error: 'Wallet has no authentication data' });
     }
@@ -40,7 +47,6 @@ export const authenticateWallet = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid passphrase' });
     }
     
-    // Create session token
     const token = jwt.sign(
       { 
         walletAddress: address,
@@ -77,33 +83,35 @@ export const authenticateWallet = async (req: Request, res: Response) => {
  * POST /api/wallet/create
  */
 export const createWallet = async (req: Request, res: Response) => {
+  console.log(`[WalletController] createWallet: Request received ${req.method} ${req.originalUrl}`);
   try {
-    const { passphrase } = req.body;
-    
-    if (!passphrase) {
-      return res.status(400).json({ error: 'Passphrase is required' });
+    const { passphrase, publicKey: clientSuppliedBase64Spki } = req.body;
+    console.log(`[WalletController] createWallet: Body - clientSuppliedBase64Spki received: ${clientSuppliedBase64Spki ? 'Yes' : 'No'}, passphrase received: ${passphrase ? 'Yes' : 'No'}`);
+
+    if (!clientSuppliedBase64Spki) {
+      console.warn('[WalletController] createWallet: clientSuppliedBase64Spki (publicKey) is required from the client.');
+      return res.status(400).json({ error: 'Public key (clientSuppliedBase64Spki) is required' });
     }
+
+    // Convert Base64 SPKI to PEM format for use with Node.js crypto utilities
+    const pemPublicKey = base64SpkiToPem(clientSuppliedBase64Spki);
+    console.log(`[WalletController] createWallet: Converted base64 SPKI to PEM. PEM PK (first 60 chars): ${pemPublicKey.substring(0,60)}...`);
     
-    // Generate wallet using centralized passphrase utilities
-    const salt = passphraseUtils.generateSalt();
-    const hash = passphraseUtils.hashPassphrase(passphrase, salt);
-    
-    console.log('Wallet creation using centralized passphrase utilities:', {
-      salt,
-      hash,
-      // Don't log actual passphrase in production
-      hashMethod: 'Using centralized passphraseUtils.hashPassphrase'
-    });
-    
-    // Generate address from hash
-    const address = 'PVX_' + hash.substring(0, 32);
-    
-    // Generate public key (simplified for demo)
-    const publicKey = crypto.createHash('sha256')
-      .update(address)
-      .digest('hex');
-    
-    // Check if wallet already exists
+    const address = cryptoUtils.generateWalletAddress(pemPublicKey);
+    console.log(`[WalletController] createWallet: Address derived from PEM public key: ${address}`);
+
+    let salt = null;
+    let passHash = null;
+
+    if (passphrase) {
+      console.log('[WalletController] createWallet: Passphrase provided, generating salt and hash.');
+      salt = passphraseUtils.generateSalt();
+      passHash = passphraseUtils.hashPassphrase(passphrase, salt);
+      console.log('[WalletController] createWallet: Salt and passphrase hash generated.');
+    } else {
+      console.log('[WalletController] createWallet: No passphrase provided. Salt and hash will be stored as null.');
+    }
+
     let dbCheckError = false;
     let existingWalletInDb = null;
     try {
@@ -137,17 +145,16 @@ export const createWallet = async (req: Request, res: Response) => {
     }
     
     // Wallet data to insert
-    const walletData = {
+    const walletData: MemWallet = { // Use MemWallet or a compatible type that walletDao expects
       address,
-      publicKey,
-      balance: "1000000", // 1 PVX initial balance for testing
+      publicKey: pemPublicKey, // Store the PEM formatted public key
+      balance: "1000000",
       createdAt: new Date(),
       lastUpdated: new Date(),
       passphraseSalt: salt,
-      passphraseHash: hash
+      passphraseHash: passHash
     };
     
-    // Create wallet in database (with try-catch)
     let walletSavedToDb = false;
     try {
       console.log(`[WalletController] CreateWallet: Attempting to save wallet ${address} to walletDao...`, {
@@ -170,15 +177,14 @@ export const createWallet = async (req: Request, res: Response) => {
     await memBlockchainStorage.createWallet(walletData);
     console.log(`[WalletController] CreateWallet: Wallet ${address} saved to memBlockchainStorage.`);
     
-    console.log(`[WalletController] Created new wallet: ${address}. DB save status: ${walletSavedToDb}`);
+    console.log(`[WalletController] createWallet: Wallet ${address} created successfully (DB save status: ${walletSavedToDb}). PEM Public key stored.`);
     
     res.status(201).json({
-      address,
-      pubkey: publicKey,
-      mnemonic: null // Not implemented yet
+      address: walletData.address,
+      publicKey: walletData.publicKey, // Return the PEM public key
     });
   } catch (error) {
-    console.error('Error creating wallet:', error);
+    console.error('[WalletController] createWallet: Error processing request:', error.message, error.stack);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to create wallet'
     });

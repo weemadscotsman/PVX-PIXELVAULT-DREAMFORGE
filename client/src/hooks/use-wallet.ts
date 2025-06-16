@@ -57,24 +57,108 @@ export function useWallet() {
     }
   };
 
-  // Create a new wallet - using the exact endpoint from blueprint
-  const createWalletMutation = useMutation({
-    mutationFn: async (data: CreateWalletRequest) => {
-      const res = await apiRequest('POST', '/api/wallet/create', data);
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to create wallet');
-      }
-      return await res.json() as Wallet;
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "Wallet created",
-        description: `New wallet created with address ${data.address}`,
-      });
-      setActiveWalletAddress(data.address);
-      queryClient.invalidateQueries({ queryKey: ['/api/wallet/all'] });
-    },
+import {
+  generateRsaKeyPair,
+  exportRsaPrivateKey,
+  exportRsaPublicKey,
+  generateSalt,
+  generateIv,
+  deriveKeyFromPassphrase,
+  encryptData,
+  arrayBufferToHex,
+  arrayBufferToBase64,
+  // For sendTransaction:
+  hexToArrayBuffer,
+  // base64ToArrayBuffer, // publicKey is already base64, not needed for decryption path here
+  decryptData,
+  importRsaPrivateKey,
+  signData,
+  serializeTransactionPayload,
+  // TextEncoder is a global browser API, no specific import needed from cryptoClient.ts
+} from "@/lib/cryptoClient"; // Adjust path as needed
+
+// ... (keep existing interfaces Wallet, WalletKeys, etc.)
+
+// Updated CreateWalletRequest if passphrase is still primary input for key derivation
+interface CreateWalletRequest {
+  passphrase: string;
+  // Potentially other fields like a user-chosen alias for the wallet
+}
+
+// Interface for what's stored in localStorage for a wallet
+export interface StoredWalletKeys {
+  encryptedPrivateKeyHex: string;
+  publicKeyBase64: string;
+  saltHex: string;
+  ivHex: string;
+  // Optional: address, if derived client-side before server confirmation
+  address?: string;
+}
+
+
+// Create a new wallet
+const createWalletMutation = useMutation({
+  mutationFn: async (data: CreateWalletRequest) => {
+    console.log('[useWallet] createWalletMutation started.');
+    const { passphrase } = data;
+
+    // 1. Generate RSA key pair
+    const keyPair = await generateRsaKeyPair();
+    const privateKeyPkcs8 = await exportRsaPrivateKey(keyPair.privateKey);
+    const publicKeySpki = await exportRsaPublicKey(keyPair.publicKey);
+    const publicKeyBase64 = arrayBufferToBase64(publicKeySpki);
+
+    // 2. Derive AES key from passphrase, encrypt private key
+    const salt = generateSalt();
+    const iv = generateIv();
+    const aesKey = await deriveKeyFromPassphrase(passphrase, salt);
+    const encryptedPrivateKey = await encryptData(aesKey, privateKeyPkcs8, iv);
+
+    const storedWalletData: StoredWalletKeys = {
+      encryptedPrivateKeyHex: arrayBufferToHex(encryptedPrivateKey),
+      publicKeyBase64: publicKeyBase64,
+      saltHex: arrayBufferToHex(salt),
+      ivHex: arrayBufferToHex(iv),
+    };
+
+    console.log('[useWallet] Keys generated and private key encrypted. Public key (base64):', publicKeyBase64.substring(0, 30) + "...");
+
+    // 3. Send public key to server to create wallet entry
+    // Server should derive address from public key, or accept a client-hinted one
+    // For now, assuming server takes publicKey and returns wallet info including address
+    const serverPayload = {
+      publicKey: publicKeyBase64,
+      // If server still uses passphrase to derive address/salt/hash for its own consistency:
+      // passphrase: passphrase, // This is less ideal if moving to client-side crypto fully
+    };
+
+    console.log('[useWallet] Sending public key to server for wallet creation...');
+    const res = await apiRequest('POST', '/api/wallet/create', serverPayload);
+    if (!res.ok) {
+      const errorData = await res.json();
+      console.error('[useWallet] Server error creating wallet:', errorData);
+      throw new Error(errorData.error || 'Failed to create wallet on server');
+    }
+    const walletFromServer = await res.json() as Wallet; // Assuming server returns Wallet structure
+    console.log('[useWallet] Wallet created on server:', walletFromServer);
+
+    // 4. Store encrypted keys and public key in local storage, keyed by the official address
+    const finalStoredData: StoredWalletKeys = { ...storedWalletData, address: walletFromServer.address };
+    localStorage.setItem(`wallet_${walletFromServer.address}`, JSON.stringify(finalStoredData));
+    console.log(`[useWallet] Encrypted wallet data stored locally for address: ${walletFromServer.address}`);
+
+    return walletFromServer; // Return the wallet data from server (which includes the address)
+  },
+  onSuccess: (walletFromServer) => { // data here is walletFromServer
+    toast({
+      title: "Wallet created",
+      description: `New wallet created with address ${walletFromServer.address}`,
+    });
+    setActiveWalletAddress(walletFromServer.address);
+    queryClient.invalidateQueries({ queryKey: ['/api/wallet/all'] });
+    // Also invalidate the specific wallet query
+    queryClient.invalidateQueries({ queryKey: ['/api/wallet', walletFromServer.address]});
+  },
     onError: (error: Error) => {
       toast({
         title: "Failed to create wallet",
@@ -222,29 +306,98 @@ export function useWallet() {
     });
   };
 
-  // Send transaction - using the exact endpoint from blueprint
-  const sendTransactionMutation = useMutation({
-    mutationFn: async (data: TransactionRequest) => {
-      // Convert to new API format
-      const sendData = {
-        from: data.fromAddress,
-        to: data.toAddress,
-        amount: data.amount,
-        passphrase: data.passphrase,
-        note: data.note || ""
-      };
-      
-      const res = await apiRequest('POST', '/api/wallet/send', sendData);
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to send transaction');
-      }
-      return await res.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "Transaction sent",
-        description: `Transaction submitted to the network successfully`,
+// Interface for the new send transaction mutation, requiring passphrase for decryption
+interface SignAndSendTransactionRequest {
+  fromAddress: string;
+  toAddress: string;
+  amount: string;
+  passphrase: string; // To decrypt the private key
+  note?: string;
+  nonce?: number; // Optional, can be generated if not provided
+}
+
+// Send transaction - MODIFIED FOR CLIENT-SIDE SIGNING
+const sendTransactionMutation = useMutation({
+  mutationFn: async (data: SignAndSendTransactionRequest) => {
+    console.log('[useWallet] sendTransactionMutation started for:', data.fromAddress);
+    const { fromAddress, toAddress, amount, passphrase, note } = data;
+
+    // 1. Retrieve stored encrypted key, salt, iv, and public key
+    const storedDataString = localStorage.getItem(`wallet_${fromAddress}`);
+    if (!storedDataString) {
+      console.error(`[useWallet] No stored wallet data found for address: ${fromAddress}`);
+      throw new Error(`No wallet data found for address ${fromAddress}. Cannot sign transaction.`);
+    }
+    const storedKeys: StoredWalletKeys = JSON.parse(storedDataString);
+    console.log('[useWallet] Retrieved stored wallet data for signing.');
+
+    // 2. Convert hex/base64 back to ArrayBuffers/Uint8Arrays
+    const salt = hexToArrayBuffer(storedKeys.saltHex);
+    const iv = hexToArrayBuffer(storedKeys.ivHex);
+    const encryptedPrivateKey = hexToArrayBuffer(storedKeys.encryptedPrivateKeyHex);
+    // publicKeyBase64 is already in the correct format for sending if needed by API
+
+    // 3. Re-derive AES key and decrypt private key
+    console.log('[useWallet] Deriving AES key and decrypting private key...');
+    const aesKey = await deriveKeyFromPassphrase(passphrase, new Uint8Array(salt)); // Ensure salt is Uint8Array
+    const privateKeyPkcs8 = await decryptData(aesKey, encryptedPrivateKey, new Uint8Array(iv)); // Ensure iv is Uint8Array
+    const rsaPrivateKey = await importRsaPrivateKey(privateKeyPkcs8);
+    console.log('[useWallet] Private key decrypted and imported.');
+
+    // 4. Construct transaction payload according to CanonicalPayload for signing
+    // The `memo` field is not part of the signed payload string as per user spec.
+    // It will be sent as part of the larger `transactionData` object to the server.
+    const payloadForSigning: import('@/lib/cryptoClient').CanonicalPayload = {
+      from: fromAddress,
+      to: toAddress,
+      amount: Number(amount), // Ensure amount is number for CanonicalPayload
+      timestamp: Date.now(),
+      nonce: data.nonce || Date.now(), // Simple nonce for now, ensure it's a number
+    };
+    const serializedPayload = serializeTransactionPayload(payloadForSigning);
+    const payloadBuffer = new TextEncoder().encode(serializedPayload);
+    console.log('[useWallet] Transaction payload serialized:', serializedPayload);
+
+    // 5. Sign the data
+    const signatureBuffer = await signData(rsaPrivateKey, payloadBuffer);
+    const signatureHex = arrayBufferToHex(signatureBuffer);
+    console.log('[useWallet] Payload signed. Signature (hex):', signatureHex.substring(0,30)+"...");
+
+    // 6. Prepare data for server - this includes the 'memo' if present,
+    //    even though it's not part of the signed string itself.
+    const transactionDataForServer = {
+      ...payloadForSigning, // from, to, amount, nonce, timestamp
+      memo: note || "",     // Add memo here
+    };
+
+    const serverPayload = {
+      transactionData: transactionDataForServer,
+      signature: signatureHex,
+      publicKey: storedKeys.publicKeyBase64,
+    };
+
+    // TODO: Clear decrypted privateKey (rsaPrivateKey, privateKeyPkcs8) from memory.
+    // This is tricky in JS. Overwriting or setting to null is the best effort.
+    // privateKeyPkcs8 = null; rsaPrivateKey = null; (will be garbage collected)
+
+    console.log('[useWallet] Sending signed transaction to server...');
+    // Assuming endpoint is updated to /api/tx/sendSigned or similar,
+    // or /api/tx/send is modified to handle this new payload.
+    // For now, using /api/tx/send and assuming server is adapted.
+    const res = await apiRequest('POST', '/api/tx/send', serverPayload);
+    if (!res.ok) {
+      const errorData = await res.json();
+      console.error('[useWallet] Server error sending signed transaction:', errorData);
+      throw new Error(errorData.error || 'Failed to send signed transaction');
+    }
+    const responseData = await res.json();
+    console.log('[useWallet] Signed transaction sent successfully. Server response:', responseData);
+    return responseData;
+  },
+  onSuccess: (responseData) => { // data here is responseData
+    toast({
+      title: "Transaction sent",
+      description: `Transaction ${responseData.tx_hash || ''} submitted successfully. Status: ${responseData.status}`,
       });
       // Update query keys to match new API paths
       if (activeWallet) {
